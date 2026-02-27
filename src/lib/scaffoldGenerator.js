@@ -1,18 +1,25 @@
 // ================================================
-// Generiert code.js aus der Interface-Definition
-// (Properties, Events, Methods aus Schritt 3)
+// Generiert code.js und index.html aus der
+// Interface-Definition (Properties, Events, Methods)
+// Beide verwenden dieselben Template-Dateien:
+//   src/templates/starter.js
+//   src/templates/starter.html
 // ================================================
 
+import starterCode from '../templates/starter.js?raw'
+import starterHtml from '../templates/starter.html?raw'
+
+
+// ── Generiert code.js ────────────────────────────────────────
 export function generateScaffold(properties, events, methods) {
-  const props    = (properties || []).filter(p => p.name.trim())
-  const evts     = (events     || []).filter(e => e.name.trim())
-  const meths    = (methods    || []).filter(m => m.name.trim())
+  const props = (properties || []).filter(p => p.name.trim())
+  const evts  = (events     || []).filter(e => e.name.trim())
+  const meths = (methods    || []).filter(m => m.name.trim())
 
   // ── setProperty switch cases ──
   const cases = props.map(p => `
         case '${p.name}':
             // ${p.type} — Control aktualisieren
-            // if (el) el... = data.value;
             break;`).join('')
 
   // ── Startwerte anwenden ──
@@ -20,7 +27,7 @@ export function generateScaffold(properties, events, methods) {
     `        setProperty({ key: '${p.name}', value: WebCC.Properties.${p.name} });`
   ).join('\n')
 
-  // ── Event-Listener ──
+  // ── Event-Listener Kommentare ──
   const eventListeners = evts.map(e => `
         // Event '${e.name}' an TIA Portal senden:
         // el.addEventListener('...', function() {
@@ -28,10 +35,9 @@ export function generateScaffold(properties, events, methods) {
         // });`).join('')
 
   // ── Contracts: properties ──
-  const contractProps = props.map(p => {
-    const def = defaultValue(p.type, p.defaultValue)
-    return `            ${p.name}: ${def}`
-  }).join(',\n')
+  const contractProps = props.map(p =>
+    `            ${p.name}: ${defaultValue(p.type, p.defaultValue)}`
+  ).join(',\n')
 
   // ── Contracts: events ──
   const contractEvents = evts.length > 0
@@ -40,71 +46,22 @@ export function generateScaffold(properties, events, methods) {
 
   // ── Contracts: methods ──
   const contractMethods = meths.length > 0
-    ? `{\n${meths.map(m => `                ${m.name}: function() {\n                    // TODO\n                }`).join(',\n')}\n            }`
+    ? `{\n${meths.map(m =>
+        `                ${m.name}: function() {\n                    // TODO\n                }`
+      ).join(',\n')}\n            }`
     : '{}'
 
-  return `// ================================================
-// VARIABLEN
-// ================================================
-var el = null;
-
-
-// ================================================
-// PROPERTY CHANGE HANDLER
-// data.key   → Name der Property
-// data.value → Neuer Wert
-// ================================================
-function setProperty(data) {
-    switch (data.key) {
-${cases || `
-        case 'MeineProperty':
-            // Control aktualisieren
-            break;`}
-    }
+  return starterCode
+    .replace('{{CASES}}',            cases           || `\n        case 'MeineProperty':\n            // Control aktualisieren\n            break;`)
+    .replace('{{INIT_CALLS}}',       initCalls       || `        setProperty({ key: 'MeineProperty', value: WebCC.Properties.MeineProperty });`)
+    .replace('{{EVENT_LISTENERS}}',  eventListeners  || '')
+    .replace('{{CONTRACT_PROPS}}',   contractProps   || `            MeineProperty: ''`)
+    .replace('{{CONTRACT_EVENTS}}',  contractEvents)
+    .replace('{{CONTRACT_METHODS}}', contractMethods)
 }
 
 
-// ================================================
-// INITIALISIERUNG
-// ================================================
-WebCC.start(
-    function(result) {
-        if (!result) return;
-
-        // ================================================
-        // INITIALISIERUNG
-        // Hier Library-Objekte erstellen und DOM-Elemente
-        // holen, z.B.:
-        //
-        // el = document.getElementById('root');
-        //
-        // gauge = new Gauge(document.getElementById('gauge'));
-        // gauge.setOptions({ ... });
-        //
-        // chart = new Chart(ctx, { ... });
-        // ================================================
-
-        // Startwerte aus Properties anwenden
-${initCalls}
-
-${eventListeners}
-        // Auf spätere Property-Änderungen reagieren
-        WebCC.onPropertyChanged.subscribe(setProperty);
-    },
-    // Contracts — Standardwerte
-    {
-        properties: {
-${contractProps || `            MeineProperty: ''`}
-        },
-        events: ${contractEvents},
-        methods: ${contractMethods}
-    },
-    [],
-    10000
-);`
-}
-
-// ── Generiert index.html mit korrekten Library-Pfaden ──
+// ── Generiert index.html mit korrekten Library-Pfaden ────────
 export function generateHtml(metadata, libraries) {
   const libScripts = (libraries || [])
     .filter(l => l.name.trim() && !l.name.endsWith('.css'))
@@ -116,27 +73,11 @@ export function generateHtml(metadata, libraries) {
     .map(l => `  <link rel="stylesheet" href="./libraries/${l.name}" />`)
     .join('\n')
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <script src="./libraries/webcc.min.js"><\/script>
-${libStyles}
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; }
-    #root { width: 100%; height: 100%; }
-  </style>
-</head>
-<body>
-
-  <div id="root"></div>
-
-${libScripts}
-  <script src="./code.js"><\/script>
-</body>
-</html>`
+  return starterHtml
+    .replace('{{LIB_STYLES}}', libStyles)
+    .replace('{{LIB_SCRIPTS}}', libScripts)
 }
+
 
 // ── Hilfsfunktion: Standardwert je Typ ──────────────────────
 function defaultValue(type, value) {
