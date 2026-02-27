@@ -95,6 +95,13 @@ function WizardInner() {
         />
       </main>
 
+      <footer className="bg-gray-900 border-t border-gray-800 px-6 py-2 text-center">
+        <span className="text-xs text-gray-600">
+          Visit my github profile: <a href="https://github.com/fabtief" 
+          className="hover:text-gray-400 transition-colors">fabtief</a>
+        </span>
+      </footer>
+
     </div>
   )
 }
