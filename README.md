@@ -65,7 +65,7 @@ The output is placed in the `dist/` folder and can be served as a static site.
 
 ---
 
-## Project structure
+## Project structure (simplified)
 
 ```
 cwc-builder/
@@ -86,8 +86,12 @@ cwc-builder/
 │   │   └── webcc.min.js                # Siemens runtime API (not included, see above)
 │   ├── store/
 │   │   └── projectStore.js             # React context, localStorage persistence
-│   └── templates/
-│       └── index.js                    # Starter templates for code.js and index.html
+│   ├── templates/
+│   |   └── index.js                    # Starter templates for code.js and index.html
+|   └── App.css
+|   └── App.jsx
+|   └── index.css
+|   └── index.jsx
 ├── public/
 ├── index.html
 ├── vite.config.js
