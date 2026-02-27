@@ -187,17 +187,17 @@ export default function Step4_Editor({ onNext, onBack }) {
 
   const generatePrompt = () => {
     const props = project.properties.filter(p => p.name.trim())
-    const evts  = project.events.filter(e => e.name.trim())
+    const evts = project.events.filter(e => e.name.trim())
     const meths = project.methods.filter(m => m.name.trim())
-    const libs  = project.libraries.filter(l => l.name.trim())
+    const libs = project.libraries.filter(l => l.name.trim())
 
     const propsText = props.length > 0
       ? props.map(p => `  - ${p.name} (${p.type})${p.defaultValue ? ', default: ' + p.defaultValue : ''}`).join('\n')
       : '  (keine)'
-    const evtsText  = evts.length  > 0 ? evts.map(e  => `  - ${e.name}`).join('\n') : '  (keine)'
+    const evtsText = evts.length > 0 ? evts.map(e => `  - ${e.name}`).join('\n') : '  (keine)'
     const methsText = meths.length > 0 ? meths.map(m => `  - ${m.name}`).join('\n') : '  (keine)'
-    const libsText  = libs.length  > 0 ? libs.map(l  => `  - ${l.name}`).join('\n') : '  (keine)'
-    const template  = TEMPLATES[0]
+    const libsText = libs.length > 0 ? libs.map(l => `  - ${l.name}`).join('\n') : '  (keine)'
+    const template = TEMPLATES[0]
 
     return `Du bist Experte für Siemens WinCC Unified Custom Web Controls (CWC).
 
@@ -263,9 +263,9 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
 
   const currentContent = () => {
     switch (activeTab) {
-      case 'code.js':       return { value: codeJs,       onChange: handleCodeChange, editable: true }
-      case 'index.html':    return { value: indexHtml,    onChange: handleHtmlChange, editable: true }
-      case 'manifest.json': return { value: manifestJson, onChange: null,             editable: false }
+      case 'code.js': return { value: codeJs, onChange: handleCodeChange, editable: true }
+      case 'index.html': return { value: indexHtml, onChange: handleHtmlChange, editable: true }
+      case 'manifest.json': return { value: manifestJson, onChange: null, editable: false }
     }
   }
 
@@ -296,7 +296,7 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
       <div className="flex gap-3 flex-1 min-h-0">
 
         {/* ── LEFT: Editor ── */}
-        <div className="flex flex-col gap-3 flex-1 min-w-0">
+        <div className="flex flex-col gap-3 w-1/2 min-w-0">
 
           {/* Editor tabs + textarea */}
           <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col flex-1">
@@ -431,20 +431,20 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
         </div>
 
         {/* ── RIGHT: Preview ── */}
-        <div className="w-80 flex flex-col gap-3 shrink-0">
+        {/* ── RIGHT: Preview ── */}
+        <div className="flex flex-col gap-3 w-1/2 min-w-0">
 
-          {/* Preview iframe */}
+          {/* Preview iframe — gleiche Höhe wie Editor */}
           <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col flex-1">
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 shrink-0">
               <span className="text-xs font-medium text-gray-300">Preview</span>
               <div className="flex items-center gap-2">
-                <span className={`text-xs px-2 py-0.5 rounded-full ${
-                  iframeError
+                <span className={`text-xs px-2 py-0.5 rounded-full ${iframeError
                     ? 'bg-red-900/50 text-red-400'
                     : iframeReady
                       ? 'bg-green-900/50 text-green-400'
                       : 'bg-gray-800 text-gray-500'
-                }`}>
+                  }`}>
                   {iframeError ? 'Error' : iframeReady ? 'Running' : 'Loading...'}
                 </span>
                 <button
@@ -459,7 +459,7 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
 
             {iframeError && (
               <div className="mx-3 mt-2 bg-red-900/30 border border-red-700 rounded px-2 py-1.5
-                              text-xs text-red-300 font-mono shrink-0">
+                      text-xs text-red-300 font-mono shrink-0">
                 {iframeError}
               </div>
             )}
@@ -475,98 +475,102 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
             </div>
           </div>
 
-          {/* Property Panel */}
-          <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 shrink-0">
-            <p className="text-xs font-semibold text-gray-400 mb-2">Property Panel</p>
-            {properties.length === 0 ? (
-              <p className="text-xs text-gray-600 italic">No properties defined.</p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {properties.map(prop => (
-                  <div key={prop.id}>
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-xs font-medium text-gray-300">{prop.name}</label>
-                      <span className="text-xs text-gray-600">{prop.type}</span>
+          {/* Untere Reihe — Property Panel, Event Log, Export Info */}
+          <div className="flex gap-3 shrink-0">
+
+            {/* Property Panel */}
+            <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex-1">
+              <p className="text-xs font-semibold text-gray-400 mb-2">Property Panel</p>
+              {properties.length === 0 ? (
+                <p className="text-xs text-gray-600 italic">No properties defined.</p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {properties.map(prop => (
+                    <div key={prop.id}>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-xs font-medium text-gray-300">{prop.name}</label>
+                        <span className="text-xs text-gray-600">{prop.type}</span>
+                      </div>
+                      <PropertyInput
+                        type={prop.type}
+                        value={propertyValues[prop.name] ?? ''}
+                        onChange={(val) => sendProperty(prop.name, val, prop.type)}
+                      />
                     </div>
-                    <PropertyInput
-                      type={prop.type}
-                      value={propertyValues[prop.name] ?? ''}
-                      onChange={(val) => sendProperty(prop.name, val, prop.type)}
-                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Event Log */}
+            <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex-1">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-gray-400">Event Log</p>
+                <button
+                  onClick={() => setEventLog([])}
+                  className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="bg-gray-950 rounded p-2 font-mono text-xs overflow-y-auto
+                      flex flex-col gap-1" style={{ height: '120px' }}>
+                {eventLog.length === 0 && (
+                  <span className="text-gray-600 italic">No events yet...</span>
+                )}
+                {eventLog.map(entry => (
+                  <div key={entry.id} className="flex gap-2">
+                    <span className="text-gray-600 shrink-0">{entry.time}</span>
+                    <span className={`shrink-0 ${entry.type === 'error' ? 'text-red-400' :
+                        entry.type === 'event' ? 'text-yellow-400' :
+                          'text-blue-400'
+                      }`}>
+                      {entry.type === 'event' ? '▶' : entry.type === 'error' ? '✕' : '←'}
+                    </span>
+                    <span className="text-gray-300 truncate">{entry.name}</span>
+                    <span className="text-gray-500 truncate">{entry.params}</span>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
-
-          {/* Event Log */}
-          <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 shrink-0">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-gray-400">Event Log</p>
-              <button
-                onClick={() => setEventLog([])}
-                className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
-              >
-                Clear
-              </button>
             </div>
-            <div className="bg-gray-950 rounded p-2 font-mono text-xs overflow-y-auto
-                            flex flex-col gap-1" style={{ height: '120px' }}>
-              {eventLog.length === 0 && (
-                <span className="text-gray-600 italic">No events yet...</span>
-              )}
-              {eventLog.map(entry => (
-                <div key={entry.id} className="flex gap-2">
-                  <span className="text-gray-600 shrink-0">{entry.time}</span>
-                  <span className={`shrink-0 ${
-                    entry.type === 'error'   ? 'text-red-400' :
-                    entry.type === 'event'   ? 'text-yellow-400' :
-                    'text-blue-400'
-                  }`}>
-                    {entry.type === 'event' ? '▶' : entry.type === 'error' ? '✕' : '←'}
-                  </span>
-                  <span className="text-gray-300 truncate">{entry.name}</span>
-                  <span className="text-gray-500 truncate">{entry.params}</span>
+
+            {/* Export Info */}
+            <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex-1">
+              <p className="text-xs font-semibold text-gray-400 mb-2">Export Info</p>
+              <div className="text-xs flex flex-col gap-1.5 text-gray-500">
+                <div>
+                  <span className="text-gray-400">File: </span>
+                  <code className="text-blue-400 break-all">
+                    {'{'}{project.metadata.guid || 'your-guid'}{'}'}.zip
+                  </code>
                 </div>
-              ))}
+                <div>
+                  <span className="text-gray-400">Control: </span>
+                  <span>{project.metadata.name || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Libraries: </span>
+                  <span>{project.libraries.filter(l => l.name).length} file(s)</span>
+                </div>
+                <hr className="border-gray-700 my-0.5" />
+                <p className="text-gray-600">
+                  Copy ZIP to:
+                  <code className="text-gray-500 block mt-0.5">
+                    ...\UserFiles\CustomControls\
+                  </code>
+                </p>
+                <hr className="border-gray-700 my-0.5" />
+                <p className="text-gray-600">
+                  Remove border:
+                  <code className="text-gray-500 block mt-0.5">
+                    item.WindowFlags =
+                    UI.Enums.HmiWindowFlag.None;
+                  </code>
+                </p>
+              </div>
             </div>
-          </div>
 
-          {/* Export Info */}
-          <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 shrink-0">
-            <p className="text-xs font-semibold text-gray-400 mb-2">Export Info</p>
-            <div className="text-xs flex flex-col gap-1.5 text-gray-500">
-              <div>
-                <span className="text-gray-400">File: </span>
-                <code className="text-blue-400 break-all">
-                  {'{'}{ project.metadata.guid || 'your-guid' }{'}'}.zip
-                </code>
-              </div>
-              <div>
-                <span className="text-gray-400">Control: </span>
-                <span>{project.metadata.name || '—'}</span>
-              </div>
-              <div>
-                <span className="text-gray-400">Libraries: </span>
-                <span>{project.libraries.filter(l => l.name).length} file(s)</span>
-              </div>
-              <hr className="border-gray-700 my-0.5" />
-              <p className="text-gray-600">
-                Copy ZIP to:
-                <code className="text-gray-500 block mt-0.5">
-                  ...\UserFiles\CustomControls\
-                </code>
-              </p>
-              <hr className="border-gray-700 my-0.5" />
-              <p className="text-gray-600">
-                Remove container border:
-                <code className="text-gray-500 block mt-0.5">
-                  item.WindowFlags = UI.Enums.HmiWindowFlag.None;
-                </code>
-              </p>
-            </div>
           </div>
-
         </div>
       </div>
 
@@ -587,10 +591,10 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
 
 function parseValue(value, type) {
   switch (type) {
-    case 'number':  return parseFloat(value) || 0
+    case 'number': return parseFloat(value) || 0
     case 'boolean': return value === 'true' || value === true
-    case 'array':   try { return JSON.parse(value) } catch { return [] }
-    default:        return String(value)
+    case 'array': try { return JSON.parse(value) } catch { return [] }
+    default: return String(value)
   }
 }
 
