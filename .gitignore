@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# Siemens proprietary file — must not be committed
+src/lib/webcc.min.js
+
+# Editor directories
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

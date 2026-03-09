@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <script src="./libraries/webcc.min.js"></script>
+  {{LIB_STYLES}}
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    #cwc-root {
+      width: 100%;
+      height: 100%;
+    }
+    #cwc-canvas {
+      width: 100%;
+      position: absolute;
+      bottom: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- div    → für die meisten Libraries (Tabulator, ApexCharts...) -->
+  <!-- canvas → für Canvas-basierte Libraries (Gauge.js, Chart.js...) -->
+  <div id="cwc-root"></div>
+  <canvas id="cwc-canvas"></canvas>
+
+  {{LIB_SCRIPTS}}
+  <script src="./code.js"></script>
+</body>
+</html>
