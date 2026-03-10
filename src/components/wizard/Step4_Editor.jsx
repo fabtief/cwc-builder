@@ -1,81 +1,55 @@
 import { useEffect, useRef, useState } from 'react'
 import { useProject } from '../../store/projectStore'
-import { generateScaffold, generateHtml } from '../../lib/scaffoldGenerator'
+import { generateScaffold, generateHtml, generateThemeCss } from '../../lib/scaffoldGenerator'
 import { generateManifest } from '../../lib/manifestGenerator'
 import { generateMockHtml } from '../../lib/webccMock'
 import { exportZip, downloadThemeCss } from '../../lib/zipExporter'
 import { TEMPLATES } from '../../templates/index'
 
-const TABS = ['code.js', 'index.html', 'theme.css', 'manifest.json']
-
-const THEME_INFO = `/* ─────────────────────────────────────────────────────────
-   theme.css — Global CWC Stylesheet
-   ─────────────────────────────────────────────────────────
-   This file is NOT bundled inside the CWC ZIP by default.
-   It lives on the HMI device at:
-
-       UserFiles\\CWC\\theme.css
-
-   In TIA Portal, read it once at runtime start and assign
-   its content to the "customCSS" property of each control:
-
-       var fs = HmiRuntime.FileSystem;
-       fs.ReadAllText('UserFiles\\CWC\\theme.css', function(err, css) {
-           if (!err) {
-               Screens('MyScreen').ScreenItems('MyTable').customCSS = css;
-           }
-       });
-
-   For a global approach, store the content in a String tag
-   and assign it to all CWC controls from a central script.
-───────────────────────────────────────────────────────── */
-
-`
+// ── Tab definitions ──────────────────────────────────────────
+const TABS = [
+  { id: 'code.js',       label: 'code.js',       badge: 'JS',   badgeColor: 'bg-yellow-900/60 text-yellow-400' },
+  { id: 'index.html',    label: 'index.html',     badge: 'HTML', badgeColor: 'bg-blue-900/60 text-blue-300'    },
+  { id: 'theme.css',     label: 'theme.css',      badge: 'CSS',  badgeColor: 'bg-purple-900/60 text-purple-400'},
+  { id: 'manifest.json', label: 'manifest.json',  badge: null,   badgeColor: null                              },
+]
 
 export default function Step4_Editor({ onNext, onBack }) {
   const { project, updateProject } = useProject()
 
   // ── Editor state ──
   const [activeTab, setActiveTab] = useState('code.js')
-  const [codeJs, setCodeJs] = useState('')
+  const [codeJs, setCodeJs]       = useState('')
   const [indexHtml, setIndexHtml] = useState('')
-  const [themeCss, setThemeCss] = useState('')
+  const [themeCss, setThemeCss]   = useState('')
   const [manifestJson, setManifestJson] = useState('')
   const [confirmRegenerate, setConfirmRegenerate] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied]         = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [showExportInfo, setShowExportInfo] = useState(false)
   const initialized = useRef(false)
 
   // ── Preview state ──
-  const [iframeContent, setIframeContent] = useState('')
-  const [iframeReady, setIframeReady] = useState(false)
-  const [iframeError, setIframeError] = useState(null)
+  const [iframeContent, setIframeContent]   = useState('')
+  const [iframeReady, setIframeReady]       = useState(false)
+  const [iframeError, setIframeError]       = useState(null)
   const [propertyValues, setPropertyValues] = useState({})
-  const [eventLog, setEventLog] = useState([])
-  const [exporting, setExporting] = useState(false)
-  const iframeRef = useRef(null)
+  const [eventLog, setEventLog]             = useState([])
+  const [exporting, setExporting]           = useState(false)
+  const iframeRef       = useRef(null)
   const iframeWindowRef = useRef(null)
 
   const properties = project.properties.filter(p => p.name.trim())
 
-  // ── Init editor on first load ──
+  // ── Init on first load ───────────────────────────────────
   useEffect(() => {
     if (initialized.current) return
     initialized.current = true
 
-    const scaffold = project.codeJs || generateScaffold(
-      project.properties,
-      project.events,
-      project.methods
-    )
-    const html = project.indexHtml || generateHtml(project.metadata, project.libraries)
-    const manifest = generateManifest(
-      project.metadata,
-      project.properties,
-      project.events,
-      project.methods
-    )
-    const theme = project.themeCss || THEME_INFO
+    const scaffold = project.codeJs     || generateScaffold(project.properties, project.events, project.methods)
+    const html     = project.indexHtml  || generateHtml(project.metadata, project.libraries)
+    const theme    = project.themeCss   || generateThemeCss(project.properties)
+    const manifest = generateManifest(project.metadata, project.properties, project.events, project.methods)
 
     setCodeJs(scaffold)
     setIndexHtml(html)
@@ -83,37 +57,29 @@ export default function Step4_Editor({ onNext, onBack }) {
     setManifestJson(JSON.stringify(JSON.parse(manifest), null, 2))
   }, [])
 
-  // ── Regenerate manifest when tab switches to it ──
+  // ── Refresh manifest when switching to it ───────────────
   useEffect(() => {
     if (activeTab === 'manifest.json') {
-      setManifestJson(generateManifest(
-        project.metadata,
-        project.properties,
-        project.events,
-        project.methods
-      ))
+      setManifestJson(generateManifest(project.metadata, project.properties, project.events, project.methods))
     }
   }, [activeTab])
 
-  // ── Refresh preview whenever code or html changes ──
+  // ── Auto-refresh preview on code/html change ────────────
   useEffect(() => {
     if (!codeJs && !indexHtml) return
     refreshPreview(indexHtml, codeJs)
   }, [codeJs, indexHtml])
 
-  // ── When theme.css changes, push it to preview as customCSS property ──
+  // ── Push theme.css to preview as customCSS ───────────────
   useEffect(() => {
     if (!iframeWindowRef.current) return
-    const cssContent = stripThemeComments(themeCss)
-    if (cssContent.trim()) {
-      iframeWindowRef.current.postMessage(
-        { type: 'cwc-set', name: 'customCSS', value: cssContent },
-        '*'
-      )
+    const css = stripThemeComments(themeCss)
+    if (css.trim()) {
+      iframeWindowRef.current.postMessage({ type: 'cwc-set', name: 'customCSS', value: css }, '*')
     }
   }, [themeCss])
 
-  // ── Listen for messages from iframe ──
+  // ── Listen for iframe messages ───────────────────────────
   useEffect(() => {
     const handler = (e) => {
       if (!e.data || !e.data.type) return
@@ -122,45 +88,36 @@ export default function Step4_Editor({ onNext, onBack }) {
           setIframeReady(true)
           setIframeError(null)
           iframeWindowRef.current = e.source
-          // Push current theme immediately after control is ready
-          const cssContent = stripThemeComments(themeCss)
-          if (cssContent.trim()) {
+          const css = stripThemeComments(themeCss)
+          if (css.trim()) {
             setTimeout(() => {
-              if (e.source) {
-                e.source.postMessage(
-                  { type: 'cwc-set', name: 'customCSS', value: cssContent },
-                  '*'
-                )
-              }
+              if (e.source) e.source.postMessage({ type: 'cwc-set', name: 'customCSS', value: css }, '*')
             }, 100)
           }
           break
         case 'cwc-event':
           setEventLog(prev => [{
-            id: crypto.randomUUID(),
-            time: new Date().toLocaleTimeString(),
-            name: e.data.name,
-            params: JSON.stringify(e.data.params || {}),
-            type: 'event'
+            id: crypto.randomUUID(), time: new Date().toLocaleTimeString(),
+            name: e.data.name, params: JSON.stringify(e.data.params || {}), type: 'event'
           }, ...prev].slice(0, 50))
           break
         case 'cwc-propset':
           setEventLog(prev => [{
-            id: crypto.randomUUID(),
-            time: new Date().toLocaleTimeString(),
-            name: e.data.name,
-            params: String(e.data.value),
-            type: 'propset'
+            id: crypto.randomUUID(), time: new Date().toLocaleTimeString(),
+            name: e.data.name, params: String(e.data.value), type: 'propset'
           }, ...prev].slice(0, 50))
           break
         case 'cwc-error':
           setIframeError(e.data.message)
           setEventLog(prev => [{
-            id: crypto.randomUUID(),
-            time: new Date().toLocaleTimeString(),
-            name: 'ERROR',
-            params: e.data.message,
-            type: 'error'
+            id: crypto.randomUUID(), time: new Date().toLocaleTimeString(),
+            name: 'ERROR', params: e.data.message, type: 'error'
+          }, ...prev].slice(0, 50))
+          break
+        case 'cwc-console':
+          setEventLog(prev => [{
+            id: crypto.randomUUID(), time: new Date().toLocaleTimeString(),
+            name: e.data.level, params: e.data.message, type: 'console-' + e.data.level
           }, ...prev].slice(0, 50))
           break
       }
@@ -169,104 +126,67 @@ export default function Step4_Editor({ onNext, onBack }) {
     return () => window.removeEventListener('message', handler)
   }, [themeCss])
 
-  // ── Helpers ──
+  // ── Helpers ──────────────────────────────────────────────
   const refreshPreview = (html, code) => {
     setIframeReady(false)
     setIframeError(null)
     iframeWindowRef.current = null
-    // Detect parent page zoom: window.devicePixelRatio reflects OS scaling,
-    // but CSS zoom is exposed via window.outerWidth / window.innerWidth ratio
     const zoomFactor = window.outerWidth / window.innerWidth
-    const content = generateMockHtml(
-      html || indexHtml,
-      code || codeJs,
-      project.libraries,
-      zoomFactor
-    )
-    setIframeContent(content)
+    setIframeContent(generateMockHtml(html || indexHtml, code || codeJs, project.libraries, zoomFactor))
   }
 
-  // Strip the info comment block from theme.css before sending to preview
-  const stripThemeComments = (css) => {
-    return css.replace(/\/\*\s*─+[\s\S]*?─+\s*\*\/\s*/g, '').trim()
-  }
+  const stripThemeComments = (css) =>
+    css.replace(/\/\*\s*──[^*]*──+\s*\*\/\s*/g, '').trim()
 
   const sendProperty = (name, value, type) => {
     const parsed = parseValue(value, type)
     setPropertyValues(prev => ({ ...prev, [name]: value }))
     if (iframeWindowRef.current) {
-      iframeWindowRef.current.postMessage(
-        { type: 'cwc-set', name, value: parsed },
-        '*'
-      )
+      iframeWindowRef.current.postMessage({ type: 'cwc-set', name, value: parsed }, '*')
     }
   }
 
-  const handleCodeChange = (e) => {
-    setCodeJs(e.target.value)
-    updateProject({ codeJs: e.target.value })
-  }
+  // ── Change handlers ──────────────────────────────────────
+  const handleCodeChange  = (e) => { setCodeJs(e.target.value);    updateProject({ codeJs: e.target.value })    }
+  const handleHtmlChange  = (e) => { setIndexHtml(e.target.value); updateProject({ indexHtml: e.target.value }) }
+  const handleThemeChange = (e) => { setThemeCss(e.target.value);  updateProject({ themeCss: e.target.value })  }
 
-  const handleHtmlChange = (e) => {
-    setIndexHtml(e.target.value)
-    updateProject({ indexHtml: e.target.value })
-  }
-
-  const handleThemeChange = (e) => {
-    setThemeCss(e.target.value)
-    updateProject({ themeCss: e.target.value })
-  }
-
-  const applyTemplate = (template) => {
-    setCodeJs(template.code)
-    updateProject({ codeJs: template.code })
-    if (template.html) {
-      setIndexHtml(template.html)
-      updateProject({ indexHtml: template.html })
-    }
-  }
-
+  // ── Regenerate ───────────────────────────────────────────
   const handleRegenerate = () => {
     const scaffold = generateScaffold(project.properties, project.events, project.methods)
-    const html = generateHtml(project.metadata, project.libraries)
+    const html     = generateHtml(project.metadata, project.libraries)
+    const theme    = generateThemeCss(project.properties)
     setCodeJs(scaffold)
     setIndexHtml(html)
-    updateProject({ codeJs: scaffold, indexHtml: html })
+    setThemeCss(theme)
+    updateProject({ codeJs: scaffold, indexHtml: html, themeCss: theme })
     setConfirmRegenerate(false)
     setActiveTab('code.js')
   }
 
+  // ── Export ───────────────────────────────────────────────
   const handleExport = async (includeTheme) => {
     setExporting(true)
     setShowExportMenu(false)
-    try {
-      await exportZip(project, includeTheme)
-    } catch (e) {
-      console.error('Export failed:', e)
-    } finally {
-      setExporting(false)
-    }
+    try { await exportZip(project, includeTheme) }
+    catch (e) { console.error('Export failed:', e) }
+    finally { setExporting(false) }
   }
 
   const handleDownloadTheme = () => {
-    const cssContent = stripThemeComments(themeCss)
-    if (cssContent.trim()) {
-      downloadThemeCss(cssContent)
-    }
+    const css = stripThemeComments(themeCss)
+    if (css.trim()) downloadThemeCss(css)
+    setShowExportMenu(false)
   }
 
+  // ── AI Prompt ────────────────────────────────────────────
   const generatePrompt = () => {
     const props = project.properties.filter(p => p.name.trim())
-    const evts = project.events.filter(e => e.name.trim())
+    const evts  = project.events.filter(e => e.name.trim())
     const meths = project.methods.filter(m => m.name.trim())
-    const libs = project.libraries.filter(l => l.name.trim())
+    const libs  = project.libraries.filter(l => l.name.trim())
 
-    const propsText = props.length > 0
-      ? props.map(p => `  - ${p.name} (${p.type})${p.defaultValue ? ', default: ' + p.defaultValue : ''}`).join('\n')
-      : '  (none)'
-    const evtsText = evts.length > 0 ? evts.map(e => `  - ${e.name}`).join('\n') : '  (none)'
-    const methsText = meths.length > 0 ? meths.map(m => `  - ${m.name}`).join('\n') : '  (none)'
-    const libsText = libs.length > 0 ? libs.map(l => `  - ${l.name}`).join('\n') : '  (none)'
+    const fmt = (arr, fn) => arr.length > 0 ? arr.map(fn).join('\n') : '  (none)'
     const template = TEMPLATES[0]
 
     return `You are an expert in Siemens WinCC Unified Custom Web Controls (CWC).
@@ -284,19 +204,19 @@ Description:  ${project.metadata.description || '(not set)'}
 LIBRARIES
 ================================================
 All libraries are located under ./libraries/ and already included.
-${libsText}
+${fmt(libs, l => `  - ${l.name}`)}
 
 ================================================
 INTERFACE
 ================================================
 Properties:
-${propsText}
+${fmt(props, p => `  - ${p.name} (${p.type})${p.defaultValue ? ', default: ' + p.defaultValue : ''}`)}
 
 Events:
-${evtsText}
+${fmt(evts, e => `  - ${e.name}`)}
 
 Methods:
-${methsText}
+${fmt(meths, m => `  - ${m.name}`)}
 
 ================================================
 RULES
@@ -307,10 +227,12 @@ RULES
   - WebCC.onPropertyChanged.subscribe(fn) with fn({ key, value })
   - WebCC.Events.fire('EventName', { parameter })
 - All libraries are included via ./libraries/[name]
-- webcc.min.js must be the first script: ./libraries/webcc.min.js
-- No jQuery, no ES6 import/export
-- If a "customCSS" property exists, implement it by injecting a <style id="cwc-custom-style"> tag
-- contracts.properties must contain all properties with default values
+- webcc.min.js must be the first script loaded
+- No ES6 import/export
+- If a "customCSS" property exists, implement it by injecting
+  a <style id="cwc-custom-style"> tag that is updated on change
+- contracts.properties must contain all properties with defaults
+- canvas is hidden by default — enable with canvas.style.display = 'block'
 
 ================================================
 STARTER TEMPLATE code.js
@@ -326,17 +248,19 @@ ${template.html}
 TASK
 ================================================
 Replace placeholder properties with the ones defined above.
-Build the HTML structure appropriate for the task.
+Build the HTML structure appropriate for the libraries.
 Initialize libraries inside the WebCC.start() callback.
 Output complete code.js and index.html — no placeholder code.`
   }
 
+  // ── Current tab content ──────────────────────────────────
   const currentContent = () => {
     switch (activeTab) {
-      case 'code.js':      return { value: codeJs,       onChange: handleCodeChange,  editable: true  }
-      case 'index.html':   return { value: indexHtml,    onChange: handleHtmlChange,  editable: true  }
-      case 'theme.css':    return { value: themeCss,     onChange: handleThemeChange, editable: true  }
-      case 'manifest.json':return { value: manifestJson, onChange: null,              editable: false }
+      case 'code.js':       return { value: codeJs,       onChange: handleCodeChange,  editable: true  }
+      case 'index.html':    return { value: indexHtml,    onChange: handleHtmlChange,  editable: true  }
+      case 'theme.css':     return { value: themeCss,     onChange: handleThemeChange, editable: true  }
+      case 'manifest.json': return { value: manifestJson, onChange: null,              editable: false }
+      default:              return { value: '',            onChange: null,              editable: false }
     }
   }
 
@@ -345,123 +269,150 @@ Output complete code.js and index.html — no placeholder code.`
   return (
     <div className="flex flex-col gap-3 h-full">
 
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between">
+      {/* ── Header ─────────────────────────────────────── */}
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold mb-1">Step 4 — Editor & Preview</h2>
-          <p className="text-gray-400 text-sm">
-            Write your control code and preview it live. Export when ready.
-          </p>
+          <p className="text-gray-400 text-sm">Write your control code and preview it live. Export when ready.</p>
         </div>
 
-        {/* Export button with dropdown */}
-        <div className="relative">
-          <div className="flex">
-            <button
-              onClick={() => handleExport(false)}
-              disabled={exporting}
-              className="px-5 py-2.5 bg-green-600 hover:bg-green-500 disabled:opacity-50
-                         rounded-l text-sm font-medium transition-colors flex items-center gap-2"
-            >
-              {exporting ? '⏳ Exporting...' : '⬇ Export ZIP'}
-            </button>
-            <button
-              onClick={() => setShowExportMenu(prev => !prev)}
-              disabled={exporting}
-              className="px-2.5 py-2.5 bg-green-700 hover:bg-green-600 disabled:opacity-50
-                         rounded-r border-l border-green-500 text-sm transition-colors"
-              title="Export options"
-            >
-              ▾
-            </button>
-          </div>
+        {/* Export button group + info toggle */}
+        <div className="flex items-center gap-2 shrink-0">
 
-          {/* Dropdown menu */}
-          {showExportMenu && (
-            <div className="absolute right-0 top-full mt-1 w-64 bg-gray-800 border border-gray-600
-                            rounded-lg shadow-xl z-50 overflow-hidden">
-              <div className="px-3 py-2 border-b border-gray-700">
-                <p className="text-xs font-semibold text-gray-400">Export options</p>
-              </div>
+          {/* Export Info toggle */}
+          <button
+            onClick={() => setShowExportInfo(prev => !prev)}
+            className={`text-xs px-2.5 py-1.5 rounded border transition-colors
+              ${showExportInfo
+                ? 'bg-gray-700 border-gray-500 text-gray-300'
+                : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-500'
+              }`}
+            title="Export info"
+          >
+            ℹ Info
+          </button>
+
+          {/* Export ZIP split button */}
+          <div className="relative">
+            <div className="flex">
               <button
                 onClick={() => handleExport(false)}
-                className="w-full text-left px-3 py-2.5 hover:bg-gray-700 transition-colors"
+                disabled={exporting}
+                className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50
+                           rounded-l text-sm font-medium transition-colors"
               >
-                <div className="text-sm text-gray-200">⬇ Export ZIP (without theme.css)</div>
-                <div className="text-xs text-gray-500 mt-0.5">
-                  theme.css lives on the HMI device separately
-                </div>
+                {exporting ? '⏳ Exporting...' : '⬇ Export ZIP'}
               </button>
               <button
-                onClick={() => handleExport(true)}
-                className="w-full text-left px-3 py-2.5 hover:bg-gray-700 transition-colors"
+                onClick={() => setShowExportMenu(prev => !prev)}
+                disabled={exporting}
+                className="px-2.5 py-2 bg-green-700 hover:bg-green-600 disabled:opacity-50
+                           rounded-r border-l border-green-500 text-sm transition-colors"
+                title="Export options"
               >
-                <div className="text-sm text-gray-200">⬇ Export ZIP (with theme.css)</div>
-                <div className="text-xs text-gray-500 mt-0.5">
-                  Bundles theme.css inside control/libraries/
-                </div>
+                ▾
               </button>
-              <div className="border-t border-gray-700">
-                <button
-                  onClick={handleDownloadTheme}
-                  className="w-full text-left px-3 py-2.5 hover:bg-gray-700 transition-colors"
-                >
-                  <div className="text-sm text-gray-200">⬇ Download theme.css only</div>
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    Save to UserFiles\CWC\ on HMI device
-                  </div>
-                </button>
-              </div>
             </div>
-          )}
+
+            {showExportMenu && (
+              <div className="absolute right-0 top-full mt-1 w-64 bg-gray-800 border border-gray-600
+                              rounded-lg shadow-xl z-50 overflow-hidden">
+                <div className="px-3 py-2 border-b border-gray-700">
+                  <p className="text-xs font-semibold text-gray-400">Export options</p>
+                </div>
+                <button onClick={() => handleExport(false)}
+                  className="w-full text-left px-3 py-2.5 hover:bg-gray-700 transition-colors">
+                  <div className="text-sm text-gray-200">⬇ Export ZIP (without theme.css)</div>
+                  <div className="text-xs text-gray-500 mt-0.5">theme.css lives on the HMI device separately</div>
+                </button>
+                <button onClick={() => handleExport(true)}
+                  className="w-full text-left px-3 py-2.5 hover:bg-gray-700 transition-colors">
+                  <div className="text-sm text-gray-200">⬇ Export ZIP (with theme.css)</div>
+                  <div className="text-xs text-gray-500 mt-0.5">Bundles theme.css inside control/libraries/</div>
+                </button>
+                <div className="border-t border-gray-700">
+                  <button onClick={handleDownloadTheme}
+                    className="w-full text-left px-3 py-2.5 hover:bg-gray-700 transition-colors">
+                    <div className="text-sm text-gray-200">⬇ Download theme.css only</div>
+                    <div className="text-xs text-gray-500 mt-0.5">Save to UserFiles\CWC\ on HMI device</div>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ── Main layout ── */}
+      {/* ── Export Info panel (collapsible) ─────────────── */}
+      {showExportInfo && (
+        <div className="bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 flex gap-8 text-xs shrink-0">
+          <div className="flex flex-col gap-1 text-gray-500">
+            <span className="text-gray-400 font-semibold mb-0.5">Output file</span>
+            <code className="text-blue-400">{'{'}{project.metadata.guid || 'your-guid'}{'}'}.zip</code>
+            <span>{project.metadata.name || '—'}</span>
+            <span>{project.libraries.filter(l => l.name).length} librar{project.libraries.filter(l => l.name).length === 1 ? 'y' : 'ies'}</span>
+          </div>
+          <div className="flex flex-col gap-1 text-gray-500">
+            <span className="text-gray-400 font-semibold mb-0.5">theme.css on device</span>
+            <code className="text-gray-400">UserFiles\CWC\theme.css</code>
+            <span>Read via HmiRuntime.FileSystem</span>
+            <span>Assign to control's customCSS property</span>
+          </div>
+          <div className="flex flex-col gap-1 text-gray-500">
+            <span className="text-gray-400 font-semibold mb-0.5">Remove border in TIA Portal</span>
+            <code className="text-gray-400">item.WindowFlags =</code>
+            <code className="text-gray-400">  UI.Enums.HmiWindowFlag.None;</code>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main layout ─────────────────────────────────── */}
       <div className="flex gap-3 flex-1 min-h-0">
 
         {/* ── LEFT: Editor ── */}
         <div className="flex flex-col gap-3 w-1/2 min-w-0">
 
-          {/* Editor tabs + textarea */}
+          {/* Editor panel */}
           <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col flex-1">
+
+            {/* Tabs */}
             <div className="flex border-b border-gray-700 shrink-0 overflow-x-auto">
               {TABS.map(tab => (
                 <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
                   className={`px-4 py-2.5 text-sm font-mono whitespace-nowrap transition-colors border-r border-gray-700
-                    ${activeTab === tab
+                    ${activeTab === tab.id
                       ? 'bg-gray-800 text-blue-400 border-b-2 border-b-blue-500'
                       : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800/50'
                     }`}
                 >
-                  {tab === 'theme.css' ? (
-                    <span className="flex items-center gap-1.5">
-                      theme.css
-                      <span className="text-xs bg-purple-900/60 text-purple-400 px-1 rounded">CSS</span>
-                    </span>
-                  ) : tab === 'manifest.json' ? (
-                    <span className="flex items-center gap-1.5">
-                      manifest.json
+                  <span className="flex items-center gap-1.5">
+                    {tab.label}
+                    {tab.badge && (
+                      <span className={`text-xs px-1 rounded ${tab.badgeColor}`}>{tab.badge}</span>
+                    )}
+                    {tab.id === 'manifest.json' && (
                       <span className="text-xs text-gray-600">(read-only)</span>
-                    </span>
-                  ) : tab}
+                    )}
+                  </span>
                 </button>
               ))}
             </div>
 
             {/* theme.css info banner */}
             {activeTab === 'theme.css' && (
-              <div className="bg-purple-950/40 border-b border-purple-800/50 px-4 py-2.5 shrink-0">
+              <div className="bg-purple-950/40 border-b border-purple-800/50 px-4 py-2 shrink-0">
                 <p className="text-xs text-purple-300">
-                  <span className="font-semibold">theme.css</span> — Write CSS here to style your control.
-                  Changes are applied live to the preview via the <code className="bg-purple-900/50 px-1 rounded">customCSS</code> property.
-                  In TIA Portal, read this file from <code className="bg-purple-900/50 px-1 rounded">UserFiles\CWC\theme.css</code> and assign it to the control property.
+                  Changes are applied live to the preview via the{' '}
+                  <code className="bg-purple-900/50 px-1 rounded">customCSS</code> property.
+                  In TIA Portal, deploy this file to{' '}
+                  <code className="bg-purple-900/50 px-1 rounded">UserFiles\CWC\theme.css</code>.
                 </p>
               </div>
             )}
 
+            {/* Editor textarea */}
             <textarea
               value={value}
               onChange={onChange}
@@ -475,43 +426,23 @@ Output complete code.js and index.html — no placeholder code.`
                 if (e.key === 'Tab' && editable) {
                   e.preventDefault()
                   const start = e.target.selectionStart
-                  const end = e.target.selectionEnd
-                  const newValue = value.substring(0, start) + '    ' + value.substring(end)
-                  onChange({ target: { value: newValue } })
-                  setTimeout(() => {
-                    e.target.selectionStart = e.target.selectionEnd = start + 4
-                  }, 0)
+                  const end   = e.target.selectionEnd
+                  const next  = value.substring(0, start) + '    ' + value.substring(end)
+                  onChange({ target: { value: next } })
+                  setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = start + 4 }, 0)
                 }
               }}
             />
           </div>
 
-          {/* Sidebar tools row — Templates, Regenerate, Prompt */}
+          {/* ── Tools row: Regenerate + AI Prompt ── */}
           <div className="flex gap-3">
-
-            {/* Templates */}
-            <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex-1">
-              <p className="text-xs font-semibold text-gray-400 mb-2">Starter Templates</p>
-              <div className="flex flex-col gap-1.5">
-                {TEMPLATES.map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => { applyTemplate(t); setActiveTab('code.js') }}
-                    className="text-left px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 rounded
-                               border border-gray-700 hover:border-blue-500 transition-colors"
-                  >
-                    <div className="text-xs text-gray-200 font-medium">{t.label}</div>
-                    <div className="text-xs text-gray-600">{t.description}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
 
             {/* Regenerate */}
             <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex-1">
-              <p className="text-xs font-semibold text-gray-400 mb-2">From Interface</p>
+              <p className="text-xs font-semibold text-gray-400 mb-1">From Interface</p>
               <p className="text-xs text-gray-600 mb-2">
-                Generates code.js + index.html from Step 3 definition.
+                Regenerates code.js, index.html and theme.css from your Step 3 definition.
               </p>
               {!confirmRegenerate ? (
                 <button
@@ -519,23 +450,19 @@ Output complete code.js and index.html — no placeholder code.`
                   className="w-full text-left px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 rounded
                              border border-gray-700 hover:border-blue-500 transition-colors"
                 >
-                  <div className="text-xs text-gray-200 font-medium">↺ Regenerate</div>
-                  <div className="text-xs text-gray-600">Overwrites code.js + index.html</div>
+                  <div className="text-xs text-gray-200 font-medium">↺ Regenerate all files</div>
+                  <div className="text-xs text-gray-600">Overwrites code.js, index.html, theme.css</div>
                 </button>
               ) : (
                 <div className="flex flex-col gap-1.5">
-                  <p className="text-xs text-yellow-400">Overwrite existing code?</p>
+                  <p className="text-xs text-yellow-400">Overwrite code.js, index.html and theme.css?</p>
                   <div className="flex gap-1.5">
-                    <button
-                      onClick={handleRegenerate}
-                      className="flex-1 px-2 py-1.5 bg-yellow-700 hover:bg-yellow-600 rounded text-xs font-medium transition-colors"
-                    >
+                    <button onClick={handleRegenerate}
+                      className="flex-1 px-2 py-1.5 bg-yellow-700 hover:bg-yellow-600 rounded text-xs font-medium transition-colors">
                       Yes
                     </button>
-                    <button
-                      onClick={() => setConfirmRegenerate(false)}
-                      className="flex-1 px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium transition-colors"
-                    >
+                    <button onClick={() => setConfirmRegenerate(false)}
+                      className="flex-1 px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium transition-colors">
                       Cancel
                     </button>
                   </div>
@@ -545,9 +472,9 @@ Output complete code.js and index.html — no placeholder code.`
 
             {/* AI Prompt */}
             <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex-1">
-              <p className="text-xs font-semibold text-gray-400 mb-2">AI Prompt</p>
+              <p className="text-xs font-semibold text-gray-400 mb-1">AI Prompt</p>
               <p className="text-xs text-gray-600 mb-2">
-                Copy prompt for Claude / ChatGPT to generate code.js + index.html.
+                Copy a prompt for Claude / ChatGPT to generate code.js + index.html.
               </p>
               <button
                 onClick={() => {
@@ -561,9 +488,7 @@ Output complete code.js and index.html — no placeholder code.`
                     : 'bg-gray-800 hover:bg-gray-700 border-gray-700 hover:border-blue-500'
                   }`}
               >
-                <div className="text-xs font-medium">
-                  {copied ? '✓ Copied!' : '⎘ Copy Prompt'}
-                </div>
+                <div className="text-xs font-medium">{copied ? '✓ Copied!' : '⎘ Copy Prompt'}</div>
                 <div className="text-xs text-gray-600">Libraries, Interface & Templates</div>
               </button>
             </div>
@@ -574,44 +499,39 @@ Output complete code.js and index.html — no placeholder code.`
         {/* ── RIGHT: Preview ── */}
         <div className="flex flex-col gap-3 w-1/2 min-w-0">
 
-          {/* Preview iframe */}
+          {/* Preview panel */}
           <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col flex-1">
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 shrink-0">
               <span className="text-xs font-medium text-gray-300">Preview</span>
               <div className="flex items-center gap-2">
-                <span className={`text-xs px-2 py-0.5 rounded-full ${iframeError
-                    ? 'bg-red-900/50 text-red-400'
-                    : iframeReady
-                      ? 'bg-green-900/50 text-green-400'
-                      : 'bg-gray-800 text-gray-500'
-                  }`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  iframeError ? 'bg-red-900/50 text-red-400' :
+                  iframeReady ? 'bg-green-900/50 text-green-400' :
+                                'bg-gray-800 text-gray-500'
+                }`}>
                   {iframeError ? 'Error' : iframeReady ? 'Running' : 'Loading...'}
                 </span>
                 <button
                   onClick={() => refreshPreview(indexHtml, codeJs)}
                   className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
                   title="Refresh preview"
-                >
-                  ↺
-                </button>
+                >↺</button>
                 <button
                   onClick={() => {
                     const blob = new Blob([iframeContent], { type: 'text/html' })
-                    const url = URL.createObjectURL(blob)
+                    const url  = URL.createObjectURL(blob)
                     window.open(url, '_blank')
                     setTimeout(() => URL.revokeObjectURL(url), 10000)
                   }}
                   className="text-xs text-gray-600 hover:text-blue-400 transition-colors"
-                  title="Open in new tab — no zoom or sandbox issues"
-                >
-                  ↗
-                </button>
+                  title="Open in new tab"
+                >↗</button>
               </div>
             </div>
 
             {iframeError && (
               <div className="mx-3 mt-2 bg-red-900/30 border border-red-700 rounded px-2 py-1.5
-                      text-xs text-red-300 font-mono shrink-0">
+                              text-xs text-red-300 font-mono shrink-0">
                 {iframeError}
               </div>
             )}
@@ -627,7 +547,7 @@ Output complete code.js and index.html — no placeholder code.`
             </div>
           </div>
 
-          {/* Bottom row — Property Panel, Event Log, Export Info */}
+          {/* ── Bottom row: Property Panel + Event Log ── */}
           <div className="flex gap-3 shrink-0">
 
             {/* Property Panel */}
@@ -659,10 +579,8 @@ Output complete code.js and index.html — no placeholder code.`
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-semibold text-gray-400">Event Log</p>
                 {eventLog.length > 0 && (
-                  <button
-                    onClick={() => setEventLog([])}
-                    className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
-                  >
+                  <button onClick={() => setEventLog([])}
+                    className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
                     Clear
                   </button>
                 )}
@@ -673,50 +591,13 @@ Output complete code.js and index.html — no placeholder code.`
                 ) : eventLog.map(entry => (
                   <div key={entry.id} className="flex items-center gap-1.5 text-xs font-mono">
                     <span className="text-gray-600 shrink-0">{entry.time}</span>
-                    <span className={`shrink-0 ${
-                      entry.type === 'error' ? 'text-red-400' :
-                      entry.type === 'event' ? 'text-yellow-400' : 'text-blue-400'
-                    }`}>
-                      {entry.type === 'event' ? '▶' : entry.type === 'error' ? '✕' : '←'}
+                    <span className={`shrink-0 ${logColor(entry.type)}`}>
+                      {logIcon(entry.type)}
                     </span>
-                    <span className="text-gray-300 truncate">{entry.name}</span>
+                    <span className={`shrink-0 ${logColor(entry.type)}`}>{entry.name}</span>
                     <span className="text-gray-500 truncate">{entry.params}</span>
                   </div>
                 ))}
-              </div>
-            </div>
-
-            {/* Export Info */}
-            <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex-1">
-              <p className="text-xs font-semibold text-gray-400 mb-2">Export Info</p>
-              <div className="text-xs flex flex-col gap-1.5 text-gray-500">
-                <div>
-                  <span className="text-gray-400">File: </span>
-                  <code className="text-blue-400 break-all">
-                    {'{'}{project.metadata.guid || 'your-guid'}{'}'}.zip
-                  </code>
-                </div>
-                <div>
-                  <span className="text-gray-400">Control: </span>
-                  <span>{project.metadata.name || '—'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Libraries: </span>
-                  <span>{project.libraries.filter(l => l.name).length} file(s)</span>
-                </div>
-                <hr className="border-gray-700 my-0.5" />
-                <p className="text-gray-600">
-                  theme.css → HMI device:
-                  <code className="text-gray-500 block mt-0.5">UserFiles\CWC\theme.css</code>
-                </p>
-                <hr className="border-gray-700 my-0.5" />
-                <p className="text-gray-600">
-                  Remove border:
-                  <code className="text-gray-500 block mt-0.5">
-                    item.WindowFlags =
-                    UI.Enums.HmiWindowFlag.None;
-                  </code>
-                </p>
               </div>
             </div>
 
@@ -724,7 +605,7 @@ Output complete code.js and index.html — no placeholder code.`
         </div>
       </div>
 
-      {/* Navigation */}
+      {/* ── Navigation ──────────────────────────────────── */}
       <div className="flex justify-between">
         <button
           onClick={onBack}
@@ -734,12 +615,9 @@ Output complete code.js and index.html — no placeholder code.`
         </button>
       </div>
 
-      {/* Click outside to close export menu */}
+      {/* Click-outside overlay for export menu */}
       {showExportMenu && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => setShowExportMenu(false)}
-        />
+        <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)} />
       )}
     </div>
   )
@@ -747,12 +625,40 @@ Output complete code.js and index.html — no placeholder code.`
 
 // ── Helpers ──────────────────────────────────────────────────
 
+function logColor(type) {
+  switch (type) {
+    case 'error':          return 'text-red-400'
+    case 'console-error':  return 'text-red-400'
+    case 'console-warn':   return 'text-yellow-400'
+    case 'console-trace':  return 'text-purple-400'
+    case 'event':          return 'text-yellow-400'
+    case 'propset':        return 'text-blue-400'
+    case 'console-log':
+    case 'console-info':
+    default:               return 'text-gray-400'
+  }
+}
+
+function logIcon(type) {
+  switch (type) {
+    case 'error':
+    case 'console-error':  return '✕'
+    case 'console-warn':   return '⚠'
+    case 'console-trace':  return '◈'
+    case 'event':          return '▶'
+    case 'propset':        return '←'
+    case 'console-info':   return 'ℹ'
+    case 'console-log':
+    default:               return '›'
+  }
+}
+
 function parseValue(value, type) {
   switch (type) {
-    case 'number': return parseFloat(value) || 0
+    case 'number':  return parseFloat(value) || 0
     case 'boolean': return value === 'true' || value === true
-    case 'array': try { return JSON.parse(value) } catch { return [] }
-    default: return String(value)
+    case 'array':   try { return JSON.parse(value) } catch { return [] }
+    default:        return String(value)
   }
 }
 
@@ -762,65 +668,40 @@ function PropertyInput({ type, value, onChange }) {
       return (
         <div className="flex gap-2">
           {['true', 'false'].map(v => (
-            <button
-              key={v}
-              onClick={() => onChange(v)}
+            <button key={v} onClick={() => onChange(v)}
               className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors
-                ${String(value) === v
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                }`}
-            >
+                ${String(value) === v ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
               {v}
             </button>
           ))}
         </div>
       )
-
     case 'number':
       return (
         <div className="flex flex-col gap-1">
-          <input
-            type="range"
-            min={0} max={100} step={1}
+          <input type="range" min={0} max={100} step={1}
             value={parseFloat(value) || 0}
             onChange={e => onChange(e.target.value)}
-            className="w-full accent-blue-500"
-          />
-          <div className="flex gap-2 items-center">
-            <input
-              type="number"
-              value={value}
-              onChange={e => onChange(e.target.value)}
-              className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1
-                         text-xs text-gray-100 focus:outline-none focus:border-blue-500"
-            />
-          </div>
+            className="w-full accent-blue-500" />
+          <input type="number" value={value}
+            onChange={e => onChange(e.target.value)}
+            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1
+                       text-xs text-gray-100 focus:outline-none focus:border-blue-500" />
         </div>
       )
-
     case 'array':
       return (
-        <textarea
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          rows={2}
-          placeholder='e.g. [1, 2, 3]'
+        <textarea value={value} onChange={e => onChange(e.target.value)}
+          rows={2} placeholder='e.g. [1, 2, 3]'
           className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5
                      text-xs font-mono text-gray-100 placeholder-gray-600
-                     focus:outline-none focus:border-blue-500 resize-none"
-        />
+                     focus:outline-none focus:border-blue-500 resize-none" />
       )
-
     default:
       return (
-        <input
-          type="text"
-          value={value}
-          onChange={e => onChange(e.target.value)}
+        <input type="text" value={value} onChange={e => onChange(e.target.value)}
           className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5
-                     text-xs text-gray-100 focus:outline-none focus:border-blue-500"
-        />
+                     text-xs text-gray-100 focus:outline-none focus:border-blue-500" />
       )
   }
 }

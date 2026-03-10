@@ -7,24 +7,26 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; }
+
+    /* ── layout ─────────────────────────────────────── */
     #cwc-root {
       width: 100%;
       height: 100%;
     }
+
+    /* canvas is hidden by default — enable in code.js   */
+    /* with: canvas.style.display = 'block';              */
     #cwc-canvas {
       width: 100%;
       position: absolute;
       bottom: 0;
-      pointer-events: none; /* canvas must never block clicks on elements below it */
-      display: none;        /* hidden by default — enable in code.js if needed */
+      display: none;
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
 
-  <!-- #cwc-root  → for div-based libraries (DataTables, Tabulator, ApexCharts...) -->
-  <!-- #cwc-canvas → for canvas-based libraries (Gauge.js, Chart.js...)            -->
-  <!--               Enable in code.js: canvas.style.display = 'block';            -->
   <div id="cwc-root"></div>
   <canvas id="cwc-canvas"></canvas>
 

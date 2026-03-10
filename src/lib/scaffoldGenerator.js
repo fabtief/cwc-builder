@@ -1,77 +1,68 @@
-// ================================================
-// Generiert code.js und index.html aus der
-// Interface-Definition (Properties, Events, Methods)
-// Beide verwenden dieselben Template-Dateien:
-//   src/templates/starter.js
-//   src/templates/starter.html
-// ================================================
+// ── scaffoldGenerator.js ─────────────────────────────────────
+// Generates code.js, index.html, and theme.css from the
+// interface definition (properties, events, methods).
+// Templates: src/templates/starter.js + starter.html
+// ─────────────────────────────────────────────────────────────
 
 import starterCode from '../templates/starter.js?raw'
 import starterHtml from '../templates/starter.html?raw'
 
 
-// ── Generiert code.js ────────────────────────────────────────
+// ── Generate code.js ─────────────────────────────────────────
 export function generateScaffold(properties, events, methods) {
   const props = (properties || []).filter(p => p.name.trim())
   const evts  = (events     || []).filter(e => e.name.trim())
   const meths = (methods    || []).filter(m => m.name.trim())
 
-  // ── setProperty switch cases ──
-  // No leading indent — the {{CASES}} placeholder in the template already sits at 8 spaces.
-  const cases = props.map(p =>
-    `case '${p.name}':\n            // ${p.type} — Control aktualisieren\n            break;`
-  ).join('\n\n        ')
+  // setProperty switch cases
+  const cases = props.map(p => `
+        case '${p.name}':
+            // ${p.type}
+            break;`).join('')
 
-  // ── Startwerte anwenden ──
-  // No leading indent — {{INIT_CALLS}} placeholder is already indented 8 spaces in the template.
+  // apply initial values
   const initCalls = props.map(p =>
-    `setProperty({ key: '${p.name}', value: WebCC.Properties.${p.name} });`
-  ).join('\n        ')
+    `        setProperty({ key: '${p.name}', value: WebCC.Properties.${p.name} });`
+  ).join('\n')
 
-  // ── Event-Listener Kommentare ──
-  // No leading indent — {{EVENT_LISTENERS}} placeholder sits at 8 spaces.
-  const eventListeners = evts.map(e =>
-    `// Event '${e.name}' an TIA Portal senden:\n        // el.addEventListener('...', function() {\n        //     WebCC.Events.fire('${e.name}', { });\n        // });`
-  ).join('\n\n        ')
+  // event listener stubs
+  const eventListeners = evts.map(e => `
+        // WebCC.Events.fire('${e.name}', { });`).join('')
 
-  // ── Contracts: properties ──
-  // No leading indent — {{CONTRACT_PROPS}} placeholder sits at 12 spaces.
+  // contracts: properties
   const contractProps = props.map(p =>
-    `${p.name}: ${defaultValue(p.type, p.defaultValue)}`
-  ).join(',\n            ')
+    `            ${p.name}: ${defaultValue(p.type, p.defaultValue)}`
+  ).join(',\n')
 
-  // ── Contracts: events ──
+  // contracts: events
   const contractEvents = evts.length > 0
     ? `[${evts.map(e => `'${e.name}'`).join(', ')}]`
     : '[]'
 
-  // ── Contracts: methods ──
+  // contracts: methods
   const contractMethods = meths.length > 0
     ? `{\n${meths.map(m =>
-        `                ${m.name}: function() {\n                    // TODO\n                }`
+        `                ${m.name}: function() { /* TODO */ }`
       ).join(',\n')}\n            }`
     : '{}'
 
   return starterCode
-    .replace('{{CASES}}',            cases           || `case 'MeineProperty':\n            // Control aktualisieren\n            break;`)
-    .replace('{{INIT_CALLS}}',       initCalls       || `setProperty({ key: 'MeineProperty', value: WebCC.Properties.MeineProperty });`)
+    .replace('{{CASES}}',            cases           || `\n        // case 'MyProperty': break;`)
+    .replace('{{INIT_CALLS}}',       initCalls       || `        // setProperty({ key: 'MyProperty', value: WebCC.Properties.MyProperty });`)
     .replace('{{EVENT_LISTENERS}}',  eventListeners  || '')
-    .replace('{{CONTRACT_PROPS}}',   contractProps   || `MeineProperty: ''`)
+    .replace('{{CONTRACT_PROPS}}',   contractProps   || `            // MyProperty: ''`)
     .replace('{{CONTRACT_EVENTS}}',  contractEvents)
     .replace('{{CONTRACT_METHODS}}', contractMethods)
 }
 
 
-// ── Generiert index.html mit korrekten Library-Pfaden ────────
+// ── Generate index.html ──────────────────────────────────────
 export function generateHtml(metadata, libraries) {
-  // CSS: injected into <head> — indented 2 spaces to match surrounding template
   const libStyles = (libraries || [])
     .filter(l => l.name.trim() && l.name.endsWith('.css'))
     .map(l => `  <link rel="stylesheet" href="./libraries/${l.name}" />`)
     .join('\n')
 
-  // JS: injected into <body> — indented 2 spaces to match surrounding template
-  // Respects the order libraries were defined in Step 1
   const libScripts = (libraries || [])
     .filter(l => l.name.trim() && !l.name.endsWith('.css'))
     .map(l => `  <script src="./libraries/${l.name}"><\/script>`)
@@ -83,7 +74,36 @@ export function generateHtml(metadata, libraries) {
 }
 
 
-// ── Hilfsfunktion: Standardwert je Typ ──────────────────────
+// ── Generate theme.css ───────────────────────────────────────
+export function generateThemeCss(properties) {
+  const props = (properties || []).filter(p => p.name.trim())
+  const hasCustomCss = props.some(p => p.name === 'customCSS')
+
+  return `/* ── theme.css ───────────────────────────────────────────────
+   Lives on the HMI device at: UserFiles\\CWC\\theme.css
+   Not bundled in the ZIP by default.
+
+   In TIA Portal, read once and assign to each control:
+       HmiRuntime.FileSystem.ReadAllText('UserFiles\\CWC\\theme.css',
+           function(err, css) {
+               if (!err) Screens('MyScreen')
+                   .ScreenItems('MyControl').customCSS = css;
+           }
+       );
+${hasCustomCss ? '' : '\n   Note: add a "customCSS" string property to your control\n   to enable live theme injection.\n'}────────────────────────────────────────────────────────── */
+
+/* ── reset ──────────────────────────────────────────────── */
+
+/* ── typography ─────────────────────────────────────────── */
+
+/* ── colors ─────────────────────────────────────────────── */
+
+/* ── layout ─────────────────────────────────────────────── */
+`
+}
+
+
+// ── Helper: default value by type ───────────────────────────
 function defaultValue(type, value) {
   if (value !== undefined && value !== '') {
     if (type === 'number')  return parseFloat(value) || 0

@@ -133,6 +133,51 @@ export function generateMockHtml(indexHtml, codeJs, libraries, zoomFactor = 1) {
 
     window.webcc = window.WebCC;
 
+    // ── Console capture ───────────────────────────────────────
+    // Override all console methods and Trace() so output appears
+    // in the CWC Builder event log instead of only in DevTools.
+    (function() {
+      var methods = { log: 'log', warn: 'warn', error: 'error', info: 'info' };
+      Object.keys(methods).forEach(function(method) {
+        var original = console[method].bind(console);
+        console[method] = function() {
+          original.apply(console, arguments);
+          var parts = Array.prototype.slice.call(arguments).map(function(a) {
+            try { return typeof a === 'object' ? JSON.stringify(a) : String(a); }
+            catch(e) { return String(a); }
+          });
+          window.parent.postMessage({
+            type: 'cwc-console',
+            level: method,
+            message: parts.join(' ')
+          }, '*');
+        };
+      });
+
+      // HMIRuntime.Trace(msg) — correct WinCC Unified API for diagnostic trace
+      // Also exposed as global Trace() for convenience during development
+      function _trace() {
+        var parts = Array.prototype.slice.call(arguments).map(function(a) {
+          try { return typeof a === 'object' ? JSON.stringify(a) : String(a); }
+          catch(e) { return String(a); }
+        });
+        console.log.apply(console, arguments); // pass-through to DevTools
+        window.parent.postMessage({
+          type: 'cwc-console',
+          level: 'trace',
+          message: parts.join(' ')
+        }, '*');
+      }
+
+      window.HMIRuntime = {
+        Trace: _trace
+      };
+
+      // global Trace() alias — not available in real WinCC Unified,
+      // but convenient shorthand during preview development
+      window.Trace = _trace;
+    })();
+
     window.addEventListener('message', function(e) {
       if (e.data && e.data.type === 'cwc-set') {
         window.WebCC._trigger(e.data.name, e.data.value);
