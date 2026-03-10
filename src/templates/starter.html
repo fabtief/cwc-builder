@@ -15,13 +15,16 @@
       width: 100%;
       position: absolute;
       bottom: 0;
+      pointer-events: none; /* canvas must never block clicks on elements below it */
+      display: none;        /* hidden by default — enable in code.js if needed */
     }
   </style>
 </head>
 <body>
 
-  <!-- div    → für die meisten Libraries (Tabulator, ApexCharts...) -->
-  <!-- canvas → für Canvas-basierte Libraries (Gauge.js, Chart.js...) -->
+  <!-- #cwc-root  → for div-based libraries (DataTables, Tabulator, ApexCharts...) -->
+  <!-- #cwc-canvas → for canvas-based libraries (Gauge.js, Chart.js...)            -->
+  <!--               Enable in code.js: canvas.style.display = 'block';            -->
   <div id="cwc-root"></div>
   <canvas id="cwc-canvas"></canvas>
 

@@ -3,10 +3,34 @@ import { useProject } from '../../store/projectStore'
 import { generateScaffold, generateHtml } from '../../lib/scaffoldGenerator'
 import { generateManifest } from '../../lib/manifestGenerator'
 import { generateMockHtml } from '../../lib/webccMock'
-import { exportZip } from '../../lib/zipExporter'
+import { exportZip, downloadThemeCss } from '../../lib/zipExporter'
 import { TEMPLATES } from '../../templates/index'
 
-const TABS = ['code.js', 'index.html', 'manifest.json']
+const TABS = ['code.js', 'index.html', 'theme.css', 'manifest.json']
+
+const THEME_INFO = `/* ─────────────────────────────────────────────────────────
+   theme.css — Global CWC Stylesheet
+   ─────────────────────────────────────────────────────────
+   This file is NOT bundled inside the CWC ZIP by default.
+   It lives on the HMI device at:
+
+       UserFiles\\CWC\\theme.css
+
+   In TIA Portal, read it once at runtime start and assign
+   its content to the "customCSS" property of each control:
+
+       var fs = HmiRuntime.FileSystem;
+       fs.ReadAllText('UserFiles\\CWC\\theme.css', function(err, css) {
+           if (!err) {
+               Screens('MyScreen').ScreenItems('MyTable').customCSS = css;
+           }
+       });
+
+   For a global approach, store the content in a String tag
+   and assign it to all CWC controls from a central script.
+───────────────────────────────────────────────────────── */
+
+`
 
 export default function Step4_Editor({ onNext, onBack }) {
   const { project, updateProject } = useProject()
@@ -15,9 +39,11 @@ export default function Step4_Editor({ onNext, onBack }) {
   const [activeTab, setActiveTab] = useState('code.js')
   const [codeJs, setCodeJs] = useState('')
   const [indexHtml, setIndexHtml] = useState('')
+  const [themeCss, setThemeCss] = useState('')
   const [manifestJson, setManifestJson] = useState('')
   const [confirmRegenerate, setConfirmRegenerate] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [showExportMenu, setShowExportMenu] = useState(false)
   const initialized = useRef(false)
 
   // ── Preview state ──
@@ -49,13 +75,15 @@ export default function Step4_Editor({ onNext, onBack }) {
       project.events,
       project.methods
     )
+    const theme = project.themeCss || THEME_INFO
 
     setCodeJs(scaffold)
     setIndexHtml(html)
-    setManifestJson(manifest)
+    setThemeCss(theme)
+    setManifestJson(JSON.stringify(JSON.parse(manifest), null, 2))
   }, [])
 
-  // ── Regenerate manifest when tab changes ──
+  // ── Regenerate manifest when tab switches to it ──
   useEffect(() => {
     if (activeTab === 'manifest.json') {
       setManifestJson(generateManifest(
@@ -73,6 +101,18 @@ export default function Step4_Editor({ onNext, onBack }) {
     refreshPreview(indexHtml, codeJs)
   }, [codeJs, indexHtml])
 
+  // ── When theme.css changes, push it to preview as customCSS property ──
+  useEffect(() => {
+    if (!iframeWindowRef.current) return
+    const cssContent = stripThemeComments(themeCss)
+    if (cssContent.trim()) {
+      iframeWindowRef.current.postMessage(
+        { type: 'cwc-set', name: 'customCSS', value: cssContent },
+        '*'
+      )
+    }
+  }, [themeCss])
+
   // ── Listen for messages from iframe ──
   useEffect(() => {
     const handler = (e) => {
@@ -82,6 +122,18 @@ export default function Step4_Editor({ onNext, onBack }) {
           setIframeReady(true)
           setIframeError(null)
           iframeWindowRef.current = e.source
+          // Push current theme immediately after control is ready
+          const cssContent = stripThemeComments(themeCss)
+          if (cssContent.trim()) {
+            setTimeout(() => {
+              if (e.source) {
+                e.source.postMessage(
+                  { type: 'cwc-set', name: 'customCSS', value: cssContent },
+                  '*'
+                )
+              }
+            }, 100)
+          }
           break
         case 'cwc-event':
           setEventLog(prev => [{
@@ -115,23 +167,28 @@ export default function Step4_Editor({ onNext, onBack }) {
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [])
+  }, [themeCss])
 
   // ── Helpers ──
   const refreshPreview = (html, code) => {
     setIframeReady(false)
     setIframeError(null)
-    setIframeWindowRef(null)
+    iframeWindowRef.current = null
+    // Detect parent page zoom: window.devicePixelRatio reflects OS scaling,
+    // but CSS zoom is exposed via window.outerWidth / window.innerWidth ratio
+    const zoomFactor = window.outerWidth / window.innerWidth
     const content = generateMockHtml(
       html || indexHtml,
       code || codeJs,
-      project.libraries
+      project.libraries,
+      zoomFactor
     )
     setIframeContent(content)
   }
 
-  const setIframeWindowRef = (val) => {
-    iframeWindowRef.current = val
+  // Strip the info comment block from theme.css before sending to preview
+  const stripThemeComments = (css) => {
+    return css.replace(/\/\*\s*─+[\s\S]*?─+\s*\*\/\s*/g, '').trim()
   }
 
   const sendProperty = (name, value, type) => {
@@ -155,6 +212,11 @@ export default function Step4_Editor({ onNext, onBack }) {
     updateProject({ indexHtml: e.target.value })
   }
 
+  const handleThemeChange = (e) => {
+    setThemeCss(e.target.value)
+    updateProject({ themeCss: e.target.value })
+  }
+
   const applyTemplate = (template) => {
     setCodeJs(template.code)
     updateProject({ codeJs: template.code })
@@ -174,14 +236,22 @@ export default function Step4_Editor({ onNext, onBack }) {
     setActiveTab('code.js')
   }
 
-  const handleExport = async () => {
+  const handleExport = async (includeTheme) => {
     setExporting(true)
+    setShowExportMenu(false)
     try {
-      await exportZip(project)
+      await exportZip(project, includeTheme)
     } catch (e) {
       console.error('Export failed:', e)
     } finally {
       setExporting(false)
+    }
+  }
+
+  const handleDownloadTheme = () => {
+    const cssContent = stripThemeComments(themeCss)
+    if (cssContent.trim()) {
+      downloadThemeCss(cssContent)
     }
   }
 
@@ -193,27 +263,27 @@ export default function Step4_Editor({ onNext, onBack }) {
 
     const propsText = props.length > 0
       ? props.map(p => `  - ${p.name} (${p.type})${p.defaultValue ? ', default: ' + p.defaultValue : ''}`).join('\n')
-      : '  (keine)'
-    const evtsText = evts.length > 0 ? evts.map(e => `  - ${e.name}`).join('\n') : '  (keine)'
-    const methsText = meths.length > 0 ? meths.map(m => `  - ${m.name}`).join('\n') : '  (keine)'
-    const libsText = libs.length > 0 ? libs.map(l => `  - ${l.name}`).join('\n') : '  (keine)'
+      : '  (none)'
+    const evtsText = evts.length > 0 ? evts.map(e => `  - ${e.name}`).join('\n') : '  (none)'
+    const methsText = meths.length > 0 ? meths.map(m => `  - ${m.name}`).join('\n') : '  (none)'
+    const libsText = libs.length > 0 ? libs.map(l => `  - ${l.name}`).join('\n') : '  (none)'
     const template = TEMPLATES[0]
 
-    return `Du bist Experte für Siemens WinCC Unified Custom Web Controls (CWC).
+    return `You are an expert in Siemens WinCC Unified Custom Web Controls (CWC).
 
-Erstelle für mich eine vollständige code.js und index.html für ein CWC mit folgenden Angaben:
+Generate a complete code.js and index.html for a CWC with the following specification:
 
 ================================================
-METADATEN
+METADATA
 ================================================
-Name:         ${project.metadata.name || '(nicht gesetzt)'}
-GUID:         ${project.metadata.guid || '(nicht gesetzt)'}
-Beschreibung: ${project.metadata.description || '(nicht gesetzt)'}
+Name:         ${project.metadata.name || '(not set)'}
+GUID:         ${project.metadata.guid || '(not set)'}
+Description:  ${project.metadata.description || '(not set)'}
 
 ================================================
 LIBRARIES
 ================================================
-Alle Libraries liegen unter ./libraries/ und sind bereits eingebunden.
+All libraries are located under ./libraries/ and already included.
 ${libsText}
 
 ================================================
@@ -229,18 +299,18 @@ Methods:
 ${methsText}
 
 ================================================
-REGELN
+RULES
 ================================================
-- Verwende ausschließlich die echte WinCC Unified WebCC API:
+- Use only the official WinCC Unified WebCC API:
   - WebCC.start(callback, contracts, [], 10000)
-  - WebCC.Properties.Name (direkt lesen/schreiben)
-  - WebCC.onPropertyChanged.subscribe(fn) mit fn({ key, value })
+  - WebCC.Properties.Name (read/write directly)
+  - WebCC.onPropertyChanged.subscribe(fn) with fn({ key, value })
   - WebCC.Events.fire('EventName', { parameter })
-- Alle Libraries werden über ./libraries/[name] eingebunden
-- webcc.min.js muss als erstes Script geladen werden: ./libraries/webcc.min.js
-- Kein jQuery, kein ES6 import/export
-- Kommentare auf Deutsch
-- contracts.properties muss alle Properties mit Standardwerten enthalten
+- All libraries are included via ./libraries/[name]
+- webcc.min.js must be the first script: ./libraries/webcc.min.js
+- No jQuery, no ES6 import/export
+- If a "customCSS" property exists, implement it by injecting a <style id="cwc-custom-style"> tag
+- contracts.properties must contain all properties with default values
 
 ================================================
 STARTER TEMPLATE code.js
@@ -253,19 +323,20 @@ STARTER TEMPLATE index.html
 ${template.html}
 
 ================================================
-AUFGABE
+TASK
 ================================================
-Ersetze "MeineProperty" durch die oben definierten Properties.
-Baue die HTML-Struktur passend zur Aufgabe auf.
-Initialisiere die Libraries im WebCC.start() Callback.
-Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
+Replace placeholder properties with the ones defined above.
+Build the HTML structure appropriate for the task.
+Initialize libraries inside the WebCC.start() callback.
+Output complete code.js and index.html — no placeholder code.`
   }
 
   const currentContent = () => {
     switch (activeTab) {
-      case 'code.js': return { value: codeJs, onChange: handleCodeChange, editable: true }
-      case 'index.html': return { value: indexHtml, onChange: handleHtmlChange, editable: true }
-      case 'manifest.json': return { value: manifestJson, onChange: null, editable: false }
+      case 'code.js':      return { value: codeJs,       onChange: handleCodeChange,  editable: true  }
+      case 'index.html':   return { value: indexHtml,    onChange: handleHtmlChange,  editable: true  }
+      case 'theme.css':    return { value: themeCss,     onChange: handleThemeChange, editable: true  }
+      case 'manifest.json':return { value: manifestJson, onChange: null,              editable: false }
     }
   }
 
@@ -274,7 +345,7 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
   return (
     <div className="flex flex-col gap-3 h-full">
 
-      {/* Header */}
+      {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold mb-1">Step 4 — Editor & Preview</h2>
@@ -282,17 +353,71 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
             Write your control code and preview it live. Export when ready.
           </p>
         </div>
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          className="px-5 py-2.5 bg-green-600 hover:bg-green-500 disabled:opacity-50
-                     rounded text-sm font-medium transition-colors flex items-center gap-2"
-        >
-          {exporting ? '⏳ Exporting...' : '⬇ Export ZIP'}
-        </button>
+
+        {/* Export button with dropdown */}
+        <div className="relative">
+          <div className="flex">
+            <button
+              onClick={() => handleExport(false)}
+              disabled={exporting}
+              className="px-5 py-2.5 bg-green-600 hover:bg-green-500 disabled:opacity-50
+                         rounded-l text-sm font-medium transition-colors flex items-center gap-2"
+            >
+              {exporting ? '⏳ Exporting...' : '⬇ Export ZIP'}
+            </button>
+            <button
+              onClick={() => setShowExportMenu(prev => !prev)}
+              disabled={exporting}
+              className="px-2.5 py-2.5 bg-green-700 hover:bg-green-600 disabled:opacity-50
+                         rounded-r border-l border-green-500 text-sm transition-colors"
+              title="Export options"
+            >
+              ▾
+            </button>
+          </div>
+
+          {/* Dropdown menu */}
+          {showExportMenu && (
+            <div className="absolute right-0 top-full mt-1 w-64 bg-gray-800 border border-gray-600
+                            rounded-lg shadow-xl z-50 overflow-hidden">
+              <div className="px-3 py-2 border-b border-gray-700">
+                <p className="text-xs font-semibold text-gray-400">Export options</p>
+              </div>
+              <button
+                onClick={() => handleExport(false)}
+                className="w-full text-left px-3 py-2.5 hover:bg-gray-700 transition-colors"
+              >
+                <div className="text-sm text-gray-200">⬇ Export ZIP (without theme.css)</div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  theme.css lives on the HMI device separately
+                </div>
+              </button>
+              <button
+                onClick={() => handleExport(true)}
+                className="w-full text-left px-3 py-2.5 hover:bg-gray-700 transition-colors"
+              >
+                <div className="text-sm text-gray-200">⬇ Export ZIP (with theme.css)</div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  Bundles theme.css inside control/libraries/
+                </div>
+              </button>
+              <div className="border-t border-gray-700">
+                <button
+                  onClick={handleDownloadTheme}
+                  className="w-full text-left px-3 py-2.5 hover:bg-gray-700 transition-colors"
+                >
+                  <div className="text-sm text-gray-200">⬇ Download theme.css only</div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    Save to UserFiles\CWC\ on HMI device
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Main layout */}
+      {/* ── Main layout ── */}
       <div className="flex gap-3 flex-1 min-h-0">
 
         {/* ── LEFT: Editor ── */}
@@ -300,24 +425,42 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
 
           {/* Editor tabs + textarea */}
           <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col flex-1">
-            <div className="flex border-b border-gray-700 shrink-0">
+            <div className="flex border-b border-gray-700 shrink-0 overflow-x-auto">
               {TABS.map(tab => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-2.5 text-sm font-mono transition-colors border-r border-gray-700
+                  className={`px-4 py-2.5 text-sm font-mono whitespace-nowrap transition-colors border-r border-gray-700
                     ${activeTab === tab
                       ? 'bg-gray-800 text-blue-400 border-b-2 border-b-blue-500'
                       : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800/50'
                     }`}
                 >
-                  {tab}
-                  {tab === 'manifest.json' && (
-                    <span className="ml-2 text-xs text-gray-600">(read-only)</span>
-                  )}
+                  {tab === 'theme.css' ? (
+                    <span className="flex items-center gap-1.5">
+                      theme.css
+                      <span className="text-xs bg-purple-900/60 text-purple-400 px-1 rounded">CSS</span>
+                    </span>
+                  ) : tab === 'manifest.json' ? (
+                    <span className="flex items-center gap-1.5">
+                      manifest.json
+                      <span className="text-xs text-gray-600">(read-only)</span>
+                    </span>
+                  ) : tab}
                 </button>
               ))}
             </div>
+
+            {/* theme.css info banner */}
+            {activeTab === 'theme.css' && (
+              <div className="bg-purple-950/40 border-b border-purple-800/50 px-4 py-2.5 shrink-0">
+                <p className="text-xs text-purple-300">
+                  <span className="font-semibold">theme.css</span> — Write CSS here to style your control.
+                  Changes are applied live to the preview via the <code className="bg-purple-900/50 px-1 rounded">customCSS</code> property.
+                  In TIA Portal, read this file from <code className="bg-purple-900/50 px-1 rounded">UserFiles\CWC\theme.css</code> and assign it to the control property.
+                </p>
+              </div>
+            )}
 
             <textarea
               value={value}
@@ -329,7 +472,7 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
                           ${!editable ? 'opacity-60 cursor-default' : ''}`}
               style={{ tabSize: 4 }}
               onKeyDown={(e) => {
-                if (e.key === 'Tab') {
+                if (e.key === 'Tab' && editable) {
                   e.preventDefault()
                   const start = e.target.selectionStart
                   const end = e.target.selectionEnd
@@ -373,27 +516,25 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
               {!confirmRegenerate ? (
                 <button
                   onClick={() => setConfirmRegenerate(true)}
-                  className="w-full px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 rounded
-                             border border-gray-700 hover:border-yellow-500 text-left transition-colors"
+                  className="w-full text-left px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 rounded
+                             border border-gray-700 hover:border-blue-500 transition-colors"
                 >
-                  <div className="text-xs text-yellow-400 font-medium">↺ Regenerate</div>
+                  <div className="text-xs text-gray-200 font-medium">↺ Regenerate</div>
                   <div className="text-xs text-gray-600">Overwrites code.js + index.html</div>
                 </button>
               ) : (
                 <div className="flex flex-col gap-1.5">
-                  <p className="text-xs text-yellow-400">Overwrite current files?</p>
+                  <p className="text-xs text-yellow-400">Overwrite existing code?</p>
                   <div className="flex gap-1.5">
                     <button
                       onClick={handleRegenerate}
-                      className="flex-1 px-2 py-1.5 bg-yellow-600 hover:bg-yellow-500
-                                 rounded text-xs font-medium transition-colors"
+                      className="flex-1 px-2 py-1.5 bg-yellow-700 hover:bg-yellow-600 rounded text-xs font-medium transition-colors"
                     >
                       Yes
                     </button>
                     <button
                       onClick={() => setConfirmRegenerate(false)}
-                      className="flex-1 px-2 py-1.5 bg-gray-700 hover:bg-gray-600
-                                 rounded text-xs transition-colors"
+                      className="flex-1 px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium transition-colors"
                     >
                       Cancel
                     </button>
@@ -414,7 +555,7 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
                   setCopied(true)
                   setTimeout(() => setCopied(false), 2000)
                 }}
-                className={`w-full px-2.5 py-1.5 rounded border text-left transition-colors
+                className={`w-full text-left px-2.5 py-1.5 rounded border transition-colors
                   ${copied
                     ? 'bg-green-900/40 border-green-600 text-green-400'
                     : 'bg-gray-800 hover:bg-gray-700 border-gray-700 hover:border-blue-500'
@@ -431,10 +572,9 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
         </div>
 
         {/* ── RIGHT: Preview ── */}
-        {/* ── RIGHT: Preview ── */}
         <div className="flex flex-col gap-3 w-1/2 min-w-0">
 
-          {/* Preview iframe — gleiche Höhe wie Editor */}
+          {/* Preview iframe */}
           <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col flex-1">
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 shrink-0">
               <span className="text-xs font-medium text-gray-300">Preview</span>
@@ -453,6 +593,18 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
                   title="Refresh preview"
                 >
                   ↺
+                </button>
+                <button
+                  onClick={() => {
+                    const blob = new Blob([iframeContent], { type: 'text/html' })
+                    const url = URL.createObjectURL(blob)
+                    window.open(url, '_blank')
+                    setTimeout(() => URL.revokeObjectURL(url), 10000)
+                  }}
+                  className="text-xs text-gray-600 hover:text-blue-400 transition-colors"
+                  title="Open in new tab — no zoom or sandbox issues"
+                >
+                  ↗
                 </button>
               </div>
             </div>
@@ -475,26 +627,26 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
             </div>
           </div>
 
-          {/* Untere Reihe — Property Panel, Event Log, Export Info */}
+          {/* Bottom row — Property Panel, Event Log, Export Info */}
           <div className="flex gap-3 shrink-0">
 
             {/* Property Panel */}
             <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex-1">
               <p className="text-xs font-semibold text-gray-400 mb-2">Property Panel</p>
               {properties.length === 0 ? (
-                <p className="text-xs text-gray-600 italic">No properties defined.</p>
+                <p className="text-xs text-gray-600 italic">No properties defined in Step 3.</p>
               ) : (
-                <div className="flex flex-col gap-3">
-                  {properties.map(prop => (
-                    <div key={prop.id}>
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="text-xs font-medium text-gray-300">{prop.name}</label>
-                        <span className="text-xs text-gray-600">{prop.type}</span>
+                <div className="flex flex-col gap-2">
+                  {properties.map(p => (
+                    <div key={p.id}>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <label className="text-xs text-gray-400 font-medium">{p.name}</label>
+                        <span className="text-xs text-gray-600">{p.type}</span>
                       </div>
                       <PropertyInput
-                        type={prop.type}
-                        value={propertyValues[prop.name] ?? ''}
-                        onChange={(val) => sendProperty(prop.name, val, prop.type)}
+                        type={p.type}
+                        value={propertyValues[p.name] ?? p.defaultValue ?? ''}
+                        onChange={(val) => sendProperty(p.name, val, p.type)}
                       />
                     </div>
                   ))}
@@ -506,25 +658,25 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
             <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex-1">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-semibold text-gray-400">Event Log</p>
-                <button
-                  onClick={() => setEventLog([])}
-                  className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
-                >
-                  Clear
-                </button>
-              </div>
-              <div className="bg-gray-950 rounded p-2 font-mono text-xs overflow-y-auto
-                      flex flex-col gap-1" style={{ height: '120px' }}>
-                {eventLog.length === 0 && (
-                  <span className="text-gray-600 italic">No events yet...</span>
+                {eventLog.length > 0 && (
+                  <button
+                    onClick={() => setEventLog([])}
+                    className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+                  >
+                    Clear
+                  </button>
                 )}
-                {eventLog.map(entry => (
-                  <div key={entry.id} className="flex gap-2">
+              </div>
+              <div className="flex flex-col gap-1 max-h-28 overflow-y-auto">
+                {eventLog.length === 0 ? (
+                  <p className="text-xs text-gray-600 italic">No events yet...</p>
+                ) : eventLog.map(entry => (
+                  <div key={entry.id} className="flex items-center gap-1.5 text-xs font-mono">
                     <span className="text-gray-600 shrink-0">{entry.time}</span>
-                    <span className={`shrink-0 ${entry.type === 'error' ? 'text-red-400' :
-                        entry.type === 'event' ? 'text-yellow-400' :
-                          'text-blue-400'
-                      }`}>
+                    <span className={`shrink-0 ${
+                      entry.type === 'error' ? 'text-red-400' :
+                      entry.type === 'event' ? 'text-yellow-400' : 'text-blue-400'
+                    }`}>
                       {entry.type === 'event' ? '▶' : entry.type === 'error' ? '✕' : '←'}
                     </span>
                     <span className="text-gray-300 truncate">{entry.name}</span>
@@ -554,10 +706,8 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
                 </div>
                 <hr className="border-gray-700 my-0.5" />
                 <p className="text-gray-600">
-                  Copy ZIP to:
-                  <code className="text-gray-500 block mt-0.5">
-                    ...\UserFiles\CustomControls\
-                  </code>
+                  theme.css → HMI device:
+                  <code className="text-gray-500 block mt-0.5">UserFiles\CWC\theme.css</code>
                 </p>
                 <hr className="border-gray-700 my-0.5" />
                 <p className="text-gray-600">
@@ -583,6 +733,14 @@ Gib code.js und index.html vollständig aus — keinen Platzhalter-Code.`
           ← Back
         </button>
       </div>
+
+      {/* Click outside to close export menu */}
+      {showExportMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowExportMenu(false)}
+        />
+      )}
     </div>
   )
 }

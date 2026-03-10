@@ -1,28 +1,94 @@
-export function generateMockHtml(indexHtml, codeJs, libraries) {
-  const libScripts = libraries
+// ============================================================
+// webccMock.js
+// Generates a self-contained HTML document for the iframe
+// preview. Respects index.html load order and head/body
+// placement, and compensates for parent page zoom level so
+// click/hover hit zones are always accurate.
+// ============================================================
+
+export function generateMockHtml(indexHtml, codeJs, libraries, zoomFactor = 1) {
+
+  // ── Build a lookup: filename → inlined content ────────────
+  const libMap = {}
+  libraries
     .filter(l => l.name.trim() && l.content.trim())
-    .map(l => {
-      if (l.name.endsWith('.css')) {
-        return `<style>/* ${l.name} */\n${l.content}</style>`
-      }
-      return `<script>/* ${l.name} */\n${l.content}<\/script>`
-    })
-    .join('\n')
+    .forEach(l => { libMap[l.name.trim()] = l.content })
 
+  // ── Parse <head> from index.html ─────────────────────────
+  const headMatch = indexHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i)
+  const headRaw = headMatch ? headMatch[1] : ''
+
+  // ── Parse <body> from index.html ─────────────────────────
   const bodyMatch = indexHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i)
-  const bodyContent = bodyMatch
-  ? bodyMatch[1]
-      .replace(/<script[^>]*src="\.\/libraries\/[^"]*"[^>]*><\/script>/gi, '')
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .trim()
-  : '<div id="cwc-root"></div>'
+  const bodyRaw = bodyMatch ? bodyMatch[1] : '<div id="cwc-root"></div>'
 
-  const styleMatch = indexHtml.match(/<style[^>]*>([\s\S]*?)<\/style>/gi)
-  const styles = styleMatch ? styleMatch.join('\n') : ''
+  // ── Inline a library tag ──────────────────────────────────
+  const inlineLibTag = (tag) => {
+    const linkMatch = tag.match(/href="\.\/libraries\/([^"]+)"/)
+    if (linkMatch) {
+      const name = linkMatch[1]
+      const content = libMap[name]
+      if (content) return `<style>/* ${name} */\n${content}\n</style>`
+      return `<!-- library not found: ${name} -->`
+    }
+    const scriptMatch = tag.match(/src="\.\/libraries\/([^"]+)"/)
+    if (scriptMatch) {
+      const name = scriptMatch[1]
+      if (name === 'webcc.min.js') return null
+      const content = libMap[name]
+      if (content) return `<script>/* ${name} */\n${content}\n<\/script>`
+      return `<!-- library not found: ${name} -->`
+    }
+    return null
+  }
 
+  // ── Process <head> ────────────────────────────────────────
+  const headLines = []
+  headRaw.replace(/<link[^>]+href="\.\/libraries\/[^"]*"[^>]*\/?>/gi, (tag) => {
+    const inlined = inlineLibTag(tag)
+    if (inlined) headLines.push(inlined)
+  })
+  headRaw.replace(/<script[^>]+src="\.\/libraries\/[^"]*"[^>]*><\/script>/gi, (tag) => {
+    const inlined = inlineLibTag(tag)
+    if (inlined) headLines.push(inlined)
+  })
+
+  // Keep user <style> blocks verbatim
+  const userStyles = []
+  headRaw.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (tag) => {
+    userStyles.push(tag)
+  })
+
+  // ── Process <body> ────────────────────────────────────────
+  const bodyContent = bodyRaw
+    .replace(/<script[^>]*src="\.\/libraries\/[^"]*"[^>]*><\/script>/gi, '')
+    .replace(/<script[^>]*src="\.\/code\.js"[^>]*><\/script>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .trim()
+
+  // Collect body scripts in index.html order
+  const bodyScripts = []
+  bodyRaw.replace(/<script[^>]+src="\.\/libraries\/([^"]+)"[^>]*><\/script>/gi, (tag, name) => {
+    if (name === 'webcc.min.js') return
+    const content = libMap[name]
+    if (content) bodyScripts.push(`<script>/* ${name} */\n${content}\n<\/script>`)
+    else bodyScripts.push(`<!-- library not found: ${name} -->`)
+  })
+
+  // ── Zoom compensation ─────────────────────────────────────
+  // When the parent page is zoomed (e.g. 80%), mouse event
+  // coordinates are reported in zoomed CSS pixels, shifting
+  // hit zones away from their visual positions inside the
+  // iframe. Applying an inverse zoom to the iframe's <html>
+  // element realigns coordinates with visual positions.
+  const zoomStyle = zoomFactor !== 1 ? `
+  <style>
+    html { zoom: ${(1 / zoomFactor).toFixed(4)}; }
+  </style>` : ''
+
+  // ── WebCC mock implementation ─────────────────────────────
   const mockJs = `
     window.WebCC = {
-
       Properties: {},
 
       Events: {
@@ -33,9 +99,7 @@ export function generateMockHtml(indexHtml, codeJs, libraries) {
 
       onPropertyChanged: {
         _subscribers: [],
-        subscribe: function(fn) {
-          this._subscribers.push(fn);
-        },
+        subscribe: function(fn) { this._subscribers.push(fn); },
         unsubscribe: function(fn) {
           this._subscribers = this._subscribers.filter(function(s) { return s !== fn; });
         },
@@ -49,7 +113,6 @@ export function generateMockHtml(indexHtml, codeJs, libraries) {
       },
 
       start: function(callback, contracts, extensions, timeout) {
-        // Standardwerte aus contracts.properties in WebCC.Properties laden
         if (contracts && contracts.properties) {
           var props = contracts.properties;
           for (var key in props) {
@@ -59,9 +122,7 @@ export function generateMockHtml(indexHtml, codeJs, libraries) {
           }
         }
         window.parent.postMessage({ type: 'cwc-ready' }, '*');
-        if (typeof callback === 'function') {
-          callback(true);
-        }
+        if (typeof callback === 'function') callback(true);
       },
 
       _trigger: function(key, value) {
@@ -88,12 +149,14 @@ export function generateMockHtml(indexHtml, codeJs, libraries) {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
   </style>
-  ${styles}
+  ${zoomStyle}
+  ${userStyles.join('\n  ')}
+  ${headLines.join('\n  ')}
   <script>${mockJs}<\/script>
-  ${libScripts}
 </head>
 <body>
   ${bodyContent}
+  ${bodyScripts.join('\n  ')}
   <script>
     try {
       ${codeJs}

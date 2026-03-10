@@ -10,6 +10,7 @@ const defaultProject = {
   methods: [],
   codeJs: '',
   indexHtml: '',
+  themeCss: '',
 }
 
 const loadFromStorage = () => {

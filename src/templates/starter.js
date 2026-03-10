@@ -2,7 +2,7 @@
 // VARIABLEN
 // ================================================
 var el     = null;   // div-basierte Libraries
-var canvas = null;   // Canvas-basierte Libraries
+var canvas = null;   // Canvas-basierte Libraries (standardmäßig ausgeblendet)
 var lib    = null;   // Library-Instanz
 
 
@@ -37,15 +37,19 @@ WebCC.start(
         // LIBRARY INITIALISIEREN
         // Beispiele:
         //
-        // Gauge.js:
+        // Gauge.js (canvas-basiert):
+        // canvas.style.display = 'block';  // ← canvas einblenden!
         // lib = new Gauge(canvas);
         // lib.setOptions({ ... });
         // lib.animationSpeed = 11;
         //
-        // Tabulator:
+        // DataTables (div-basiert):
+        // lib = $('#cwc-root table').DataTable({ ... });
+        //
+        // Tabulator (div-basiert):
         // lib = new Tabulator(el, { layout: 'fitColumns' });
         //
-        // ApexCharts:
+        // ApexCharts (div-basiert):
         // lib = new ApexCharts(el, { chart: { type: 'line' } });
         // lib.render();
         // ================================================
