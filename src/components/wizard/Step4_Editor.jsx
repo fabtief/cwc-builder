@@ -27,6 +27,7 @@ export default function Step4_Editor({ onNext, onBack }) {
   const [copied, setCopied]         = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [showExportInfo, setShowExportInfo] = useState(false)
+  const [previewBg, setPreviewBg]           = useState('#ffffff')
   const initialized = useRef(false)
 
   // ── Preview state ──
@@ -185,13 +186,39 @@ export default function Step4_Editor({ onNext, onBack }) {
     const evts  = project.events.filter(e => e.name.trim())
     const meths = project.methods.filter(m => m.name.trim())
     const libs  = project.libraries.filter(l => l.name.trim())
+    const hasCustomCss = props.some(p => p.name === 'customCSS')
 
     const fmt = (arr, fn) => arr.length > 0 ? arr.map(fn).join('\n') : '  (none)'
-    const template = TEMPLATES[0]
+
+    // Use current editor content — fall back to starter template only if empty
+    const template      = TEMPLATES[0]
+    const currentCodeJs = codeJs    || template.code
+    const currentHtml   = indexHtml || template.html
+    const currentCss    = project.themeCss || null
+
+    const customCssRule = hasCustomCss ? `
+- The customCSS property MUST update a <style id="cwc-custom-style"> tag:
+    case 'customCSS':
+        var styleTag = document.getElementById('cwc-custom-style');
+        if (!styleTag) {
+            styleTag = document.createElement('style');
+            styleTag.id = 'cwc-custom-style';
+            document.head.appendChild(styleTag);
+        }
+        styleTag.textContent = data.value || '';
+        break;` : ''
+
+    const cssSection = currentCss ? `
+================================================
+CURRENT theme.css
+================================================
+${currentCss}
+` : ''
 
     return `You are an expert in Siemens WinCC Unified Custom Web Controls (CWC).
 
-Generate a complete code.js and index.html for a CWC with the following specification:
+Extend or improve the EXISTING files below — use them as your starting point.
+Do NOT rewrite from scratch. Keep all existing working logic and only add or adjust what is needed.
 
 ================================================
 METADATA
@@ -203,7 +230,7 @@ Description:  ${project.metadata.description || '(not set)'}
 ================================================
 LIBRARIES
 ================================================
-All libraries are located under ./libraries/ and already included.
+All libraries are located under ./libraries/ and already included in index.html.
 ${fmt(libs, l => `  - ${l.name}`)}
 
 ================================================
@@ -222,35 +249,36 @@ ${fmt(meths, m => `  - ${m.name}`)}
 RULES
 ================================================
 - Use only the official WinCC Unified WebCC API:
-  - WebCC.start(callback, contracts, [], 10000)
-  - WebCC.Properties.Name (read/write directly)
-  - WebCC.onPropertyChanged.subscribe(fn) with fn({ key, value })
-  - WebCC.Events.fire('EventName', { parameter })
-- All libraries are included via ./libraries/[name]
-- webcc.min.js must be the first script loaded
-- No ES6 import/export
-- If a "customCSS" property exists, implement it by injecting
-  a <style id="cwc-custom-style"> tag that is updated on change
-- contracts.properties must contain all properties with defaults
-- canvas is hidden by default — enable with canvas.style.display = 'block'
+  WebCC.start(callback, contracts, [], 10000)
+  WebCC.Properties.Name  (read/write)
+  WebCC.onPropertyChanged.subscribe(fn)  with fn({ key, value })
+  WebCC.Events.fire('EventName', { parameter })
+- Libraries are already loaded — do not add extra <script> or <link> tags
+- webcc.min.js is always the first script loaded
+- No ES6 import/export — UMD/IIFE only
+- contracts.properties must contain ALL properties with correct types and defaults
+- canvas is hidden by default — enable with canvas.style.display = 'block' only for canvas-based libs${customCssRule}
 
 ================================================
-STARTER TEMPLATE code.js
+CURRENT code.js
 ================================================
-${template.code}
+${currentCodeJs}
 
 ================================================
-STARTER TEMPLATE index.html
+CURRENT index.html
 ================================================
-${template.html}
-
+${currentHtml}
+${cssSection}
 ================================================
 TASK
 ================================================
-Replace placeholder properties with the ones defined above.
-Build the HTML structure appropriate for the libraries.
-Initialize libraries inside the WebCC.start() callback.
-Output complete code.js and index.html — no placeholder code.`
+Based on the existing files above:
+1. Ensure every property in the interface has a correct case in setProperty()
+2. Ensure the contracts object contains all properties, events and methods
+3. Implement any TODO sections using the available libraries
+4. If customCSS is defined, verify the <style id="cwc-custom-style"> injection is present
+5. Output the complete updated code.js and index.html (and theme.css if it was provided)
+   — full files only, no placeholders, no truncation`
   }
 
   // ── Current tab content ──────────────────────────────────
@@ -504,6 +532,33 @@ Output complete code.js and index.html — no placeholder code.`
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 shrink-0">
               <span className="text-xs font-medium text-gray-300">Preview</span>
               <div className="flex items-center gap-2">
+
+                {/* Background color picker */}
+                <div className="flex items-center gap-1" title="Preview background color">
+                  {['#ffffff', '#f0f4f9', '#1a1a2e', '#e8e8e8', 'transparent'].map(color => (
+                    <button
+                      key={color}
+                      onClick={() => setPreviewBg(color)}
+                      title={color}
+                      className={`w-4 h-4 rounded-sm border transition-all
+                        ${previewBg === color ? 'border-blue-400 scale-110' : 'border-gray-600 hover:border-gray-400'}`}
+                      style={{
+                        background: color === 'transparent'
+                          ? 'repeating-conic-gradient(#aaa 0% 25%, #fff 0% 50%) 0 0 / 8px 8px'
+                          : color
+                      }}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={previewBg === 'transparent' ? '#ffffff' : previewBg}
+                    onChange={e => setPreviewBg(e.target.value)}
+                    className="w-4 h-4 rounded-sm border border-gray-600 cursor-pointer bg-transparent"
+                    title="Custom color"
+                    style={{ padding: 0 }}
+                  />
+                </div>
+
                 <span className={`text-xs px-2 py-0.5 rounded-full ${
                   iframeError ? 'bg-red-900/50 text-red-400' :
                   iframeReady ? 'bg-green-900/50 text-green-400' :
@@ -536,7 +591,7 @@ Output complete code.js and index.html — no placeholder code.`
               </div>
             )}
 
-            <div className="flex-1 bg-white min-h-0">
+            <div className="flex-1 min-h-0" style={{ background: previewBg }}>
               <iframe
                 ref={iframeRef}
                 title="CWC Preview"

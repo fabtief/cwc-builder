@@ -1,11 +1,17 @@
-export function generateManifest(metadata, properties, events, methods) {
-  const guid = (metadata.guid || '').toUpperCase()
+// ── manifestGenerator.js ─────────────────────────────────────
+// Generates manifest.json for the CWC ZIP.
+// iconPath is optional — defaults to './assets/icon.png'
+// ─────────────────────────────────────────────────────────────
+
+export function generateManifest(metadata, properties, events, methods, iconPath) {
+  const guid     = (metadata.guid || '').toUpperCase()
+  const resolvedIconPath = iconPath || `./assets/${metadata.iconName || 'icon.png'}`
 
   const mapType = (type) => {
     switch (type) {
       case 'number':  return 'number'
       case 'boolean': return 'boolean'
-      case 'array':   return 'string'  // Arrays als JSON-String
+      case 'array':   return 'string'   // arrays serialised as JSON string
       default:        return 'string'
     }
   }
@@ -23,7 +29,7 @@ export function generateManifest(metadata, properties, events, methods) {
     return value
   }
 
-  // Properties als Objekt { name: { type, default } }
+  // Properties
   const propsObj = {}
   properties
     .filter(p => p.name.trim())
@@ -34,7 +40,7 @@ export function generateManifest(metadata, properties, events, methods) {
       }
     })
 
-  // Events als Objekt { name: { parameters, description } }
+  // Events
   const eventsObj = {}
   events
     .filter(e => e.name.trim())
@@ -47,7 +53,7 @@ export function generateManifest(metadata, properties, events, methods) {
       eventsObj[e.name.trim()] = { parameters: params }
     })
 
-  // Methods als Objekt
+  // Methods
   const methodsObj = {}
   methods
     .filter(m => m.name.trim())
@@ -64,14 +70,15 @@ export function generateManifest(metadata, properties, events, methods) {
     mver: '1.2.0',
     control: {
       identity: {
-        name:        metadata.name || 'MyControl',
-        version:     metadata.version || '1',
+        name:        metadata.name        || 'MyControl',
+        version:     metadata.version     || '1',
         displayname: metadata.displayname || metadata.name || 'MyControl',
-        icon:        './assets/icon.png',
+        icon:        resolvedIconPath,
         type:        `guid://${guid}`,
         start:       './control/index.html'
       },
-      enviroment: {  // Achtung: Siemens schreibt "enviroment" (Tippfehler im Schema)
+      // Note: Siemens intentionally spells this "enviroment" (schema typo)
+      enviroment: {
         extensions: {
           HMI: {
             mandatory: true,

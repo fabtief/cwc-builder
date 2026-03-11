@@ -14,11 +14,25 @@ export function generateScaffold(properties, events, methods) {
   const evts  = (events     || []).filter(e => e.name.trim())
   const meths = (methods    || []).filter(m => m.name.trim())
 
-  // setProperty switch cases
-  const cases = props.map(p => `
+  // setProperty switch cases — customCSS gets a full implementation
+  const cases = props.map(p => {
+    if (p.name === 'customCSS') {
+      return `
+        case 'customCSS':
+            var styleTag = document.getElementById('cwc-custom-style');
+            if (!styleTag) {
+                styleTag = document.createElement('style');
+                styleTag.id = 'cwc-custom-style';
+                document.head.appendChild(styleTag);
+            }
+            styleTag.textContent = data.value || '';
+            break;`
+    }
+    return `
         case '${p.name}':
             // ${p.type}
-            break;`).join('')
+            break;`
+  }).join('')
 
   // apply initial values
   const initCalls = props.map(p =>
@@ -79,18 +93,34 @@ export function generateThemeCss(properties) {
   const props = (properties || []).filter(p => p.name.trim())
   const hasCustomCss = props.some(p => p.name === 'customCSS')
 
-  return `/* ── theme.css ───────────────────────────────────────────────
-   Lives on the HMI device at: UserFiles\\CWC\\theme.css
-   Not bundled in the ZIP by default.
+  const customCssNote = hasCustomCss
+    ? ''
+    : '\n   Note: add a "customCSS" string property in Step 3 to enable live theme injection.\n'
 
-   In TIA Portal, read once and assign to each control:
-       HmiRuntime.FileSystem.ReadAllText('UserFiles\\CWC\\theme.css',
-           function(err, css) {
-               if (!err) Screens('MyScreen')
-                   .ScreenItems('MyControl').customCSS = css;
-           }
-       );
-${hasCustomCss ? '' : '\n   Note: add a "customCSS" string property to your control\n   to enable live theme injection.\n'}────────────────────────────────────────────────────────── */
+  return `/* ── theme.css ─────────────────────────────────────────────────
+   Deploy to the HMI device at a publicly accessible path, e.g.:
+       C:\\Users\\Public\\theme.css
+   (WinCC must have read permission on the folder)
+${customCssNote}
+   Load in the screen's Loaded event in TIA Portal:
+   ─────────────────────────────────────────────────────────────
+   HMIRuntime.FileSystem.ReadFile("C:\\\\Users\\\\Public\\\\theme.css", "utf8")
+     .then(function(customCSS) {
+       for (const screenItem of Screen.Items) {
+         try {
+           screenItem.Properties.customCSS = customCSS;
+         } catch(e) {
+           HMIRuntime.Trace("Set failed: " + e);
+         }
+       }
+     })
+     .catch(function(err) {
+       HMIRuntime.Trace("Read error: " + err);
+     });
+   ─────────────────────────────────────────────────────────────
+   This runs on every page load — edit theme.css on the device
+   and navigate away/back to see changes without redeploying.
+────────────────────────────────────────────────────────────── */
 
 /* ── reset ──────────────────────────────────────────────── */
 

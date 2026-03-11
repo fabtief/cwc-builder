@@ -4,13 +4,19 @@ const STORAGE_KEY = 'cwc-builder-project'
 
 const defaultProject = {
   libraries: [],
-  metadata: { name: '', guid: '', description: '' },
+  metadata: {
+    name:        '',
+    guid:        '',
+    description: '',
+    iconData:    null,       // base64 data URL of uploaded icon
+    iconName:    'icon.png', // original filename (e.g. icon.ico)
+  },
   properties: [],
-  events: [],
-  methods: [],
-  codeJs: '',
-  indexHtml: '',
-  themeCss: '',
+  events:     [],
+  methods:    [],
+  codeJs:     '',
+  indexHtml:  '',
+  themeCss:   '',
 }
 
 const loadFromStorage = () => {
