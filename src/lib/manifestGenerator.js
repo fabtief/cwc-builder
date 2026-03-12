@@ -1,17 +1,11 @@
-// ── manifestGenerator.js ─────────────────────────────────────
-// Generates manifest.json for the CWC ZIP.
-// iconPath is optional — defaults to './assets/icon.png'
-// ─────────────────────────────────────────────────────────────
-
-export function generateManifest(metadata, properties, events, methods, iconPath) {
-  const guid     = (metadata.guid || '').toUpperCase()
-  const resolvedIconPath = iconPath || `./assets/${metadata.iconName || 'icon.png'}`
+export function generateManifest(metadata, properties, events, methods) {
+  const guid = (metadata.guid || '').toUpperCase()
 
   const mapType = (type) => {
     switch (type) {
       case 'number':  return 'number'
       case 'boolean': return 'boolean'
-      case 'array':   return 'string'   // arrays serialised as JSON string
+      case 'array':   return 'string'  // Arrays as JSON string
       default:        return 'string'
     }
   }
@@ -29,7 +23,20 @@ export function generateManifest(metadata, properties, events, methods, iconPath
     return value
   }
 
-  // Properties
+  // Build a parameters object using paramTypes when available.
+  // paramTypes is a comma-separated string of types matching the parameter names.
+  const buildParams = (paramNames, paramTypes) => {
+    const names = (paramNames || '').split(',').map(s => s.trim()).filter(Boolean)
+    const types = (paramTypes  || '').split(',').map(s => s.trim())
+    const result = {}
+    names.forEach((name, i) => {
+      const t = types[i] || 'string'
+      result[name] = { type: ['string', 'number', 'boolean'].includes(t) ? t : 'string' }
+    })
+    return result
+  }
+
+  // Properties as object { name: { type, default } }
   const propsObj = {}
   properties
     .filter(p => p.name.trim())
@@ -40,45 +47,38 @@ export function generateManifest(metadata, properties, events, methods, iconPath
       }
     })
 
-  // Events
+  // Events as object { name: { parameters } }
   const eventsObj = {}
   events
     .filter(e => e.name.trim())
     .forEach(e => {
-      const params = {}
-      if (e.parameters) {
-        e.parameters.split(',').map(s => s.trim()).filter(Boolean)
-          .forEach(p => { params[p] = { type: 'string' } })
+      eventsObj[e.name.trim()] = {
+        parameters: buildParams(e.parameters, e.paramTypes)
       }
-      eventsObj[e.name.trim()] = { parameters: params }
     })
 
-  // Methods
+  // Methods as object { name: { parameters } }
   const methodsObj = {}
   methods
     .filter(m => m.name.trim())
     .forEach(m => {
-      const params = {}
-      if (m.parameters) {
-        m.parameters.split(',').map(s => s.trim()).filter(Boolean)
-          .forEach(p => { params[p] = { type: 'string' } })
+      methodsObj[m.name.trim()] = {
+        parameters: buildParams(m.parameters, m.paramTypes)
       }
-      methodsObj[m.name.trim()] = { parameters: params }
     })
 
   const manifest = {
     mver: '1.2.0',
     control: {
       identity: {
-        name:        metadata.name        || 'MyControl',
-        version:     metadata.version     || '1',
+        name:        metadata.name || 'MyControl',
+        version:     metadata.version || '1',
         displayname: metadata.displayname || metadata.name || 'MyControl',
-        icon:        resolvedIconPath,
+        icon:        './assets/icon.png',
         type:        `guid://${guid}`,
         start:       './control/index.html'
       },
-      // Note: Siemens intentionally spells this "enviroment" (schema typo)
-      enviroment: {
+      enviroment: {  // Siemens typo in schema — preserved intentionally
         extensions: {
           HMI: {
             mandatory: true,

@@ -53,12 +53,29 @@ export function generateScaffold(properties, events, methods) {
     ? `[${evts.map(e => `'${e.name}'`).join(', ')}]`
     : '[]'
 
-  // contracts: methods
+  // contracts: methods — wrapper delegates to standalone function
   const contractMethods = meths.length > 0
-    ? `{\n${meths.map(m =>
-        `                ${m.name}: function() { /* TODO */ }`
-      ).join(',\n')}\n            }`
+    ? `{\n${meths.map(m => {
+        const paramList = (m.parameters || '').split(',').map(s => s.trim()).filter(Boolean)
+        const comment   = paramList.length > 0 ? ` // params: ${paramList.join(', ')}` : ''
+        return `                ${m.name}: function(param){ ${m.name}(param); }${comment}`
+      }).join(',\n')}\n            }`
     : '{}'
+
+  // method handler functions — placed between PROPERTY HANDLER and INIT
+  const methodHandlers = meths.length > 0
+    ? `// ── METHOD HANDLERS ──────────────────────────────────────────\n${
+        meths.map(m => {
+          const paramList = (m.parameters || '').split(',').map(s => s.trim()).filter(Boolean)
+          const paramTypes = (m.paramTypes  || '').split(',').map(s => s.trim())
+          const varLines = paramList.map((p, i) => {
+            const t = ['string','number','boolean'].includes(paramTypes[i]) ? paramTypes[i] : 'string'
+            return `    var ${p} = param.${p}; // ${t}`
+          }).join('\n')
+          return `function ${m.name}(param) {\n${varLines ? varLines + '\n' : ''}\n    // TODO\n\n}`
+        }).join('\n\n')
+      }\n\n`
+    : ''
 
   return starterCode
     .replace('{{CASES}}',            cases           || `\n        // case 'MyProperty': break;`)
@@ -67,6 +84,7 @@ export function generateScaffold(properties, events, methods) {
     .replace('{{CONTRACT_PROPS}}',   contractProps   || `            // MyProperty: ''`)
     .replace('{{CONTRACT_EVENTS}}',  contractEvents)
     .replace('{{CONTRACT_METHODS}}', contractMethods)
+    .replace('{{METHOD_HANDLERS}}',  methodHandlers)
 }
 
 
@@ -102,7 +120,7 @@ export function generateThemeCss(properties) {
        C:\\Users\\Public\\theme.css
    (WinCC must have read permission on the folder)
 ${customCssNote}
-   Load in the screen's Loaded event in TIA Portal:
+   Load in the screen Loaded event in TIA Portal:
    ─────────────────────────────────────────────────────────────
    HMIRuntime.FileSystem.ReadFile("C:\\\\Users\\\\Public\\\\theme.css", "utf8")
      .then(function(customCSS) {
@@ -122,16 +140,72 @@ ${customCssNote}
    and navigate away/back to see changes without redeploying.
 ────────────────────────────────────────────────────────────── */
 
-/* ── reset ──────────────────────────────────────────────── */
+/* ── CSS custom properties (design tokens) ──────────────────
+   Override any of these to restyle all controls at once.
+   Place overrides in :root { } or a more specific selector.
+─────────────────────────────────────────────────────────────── */
+:root {
+
+  /* Typography */
+  --cwc-font-family:      'Segoe UI', Arial, sans-serif;
+  --cwc-font-size:        14px;
+  --cwc-font-size-small:  12px;
+  --cwc-font-size-large:  16px;
+  --cwc-font-weight:      400;
+  --cwc-font-weight-bold: 600;
+  --cwc-line-height:      1.4;
+
+  /* Colors — backgrounds */
+  --cwc-color-background:       transparent;
+  --cwc-color-background-panel: #ffffff;
+  --cwc-color-background-alt:   #f4f6f8;
+  --cwc-color-background-input: #ffffff;
+
+  /* Colors — text */
+  --cwc-color-text:         #1a1a1a;
+  --cwc-color-text-muted:   #6b7280;
+  --cwc-color-text-inverse: #ffffff;
+
+  /* Colors — borders */
+  --cwc-color-border:       #d1d5db;
+  --cwc-color-border-focus: #2563eb;
+
+  /* Colors — accent / interactive */
+  --cwc-color-primary:        #2563eb;
+  --cwc-color-primary-hover:  #1d4ed8;
+  --cwc-color-success:        #16a34a;
+  --cwc-color-warning:        #d97706;
+  --cwc-color-error:          #dc2626;
+
+  /* Shape */
+  --cwc-border-radius:       4px;
+  --cwc-border-radius-large: 8px;
+  --cwc-border-width:        1px;
+
+  /* Spacing */
+  --cwc-spacing-xs: 4px;
+  --cwc-spacing-sm: 8px;
+  --cwc-spacing-md: 12px;
+  --cwc-spacing-lg: 16px;
+  --cwc-spacing-xl: 24px;
+
+  /* Elevation */
+  --cwc-shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --cwc-shadow-md: 0 2px 8px rgba(0,0,0,0.10);
+  --cwc-shadow-lg: 0 4px 16px rgba(0,0,0,0.15);
+}
+
+/* ── base element styles ─────────────────────────────────── */
+
+/* ── panel ───────────────────────────────────────────────── */
 
 /* ── typography ─────────────────────────────────────────── */
 
-/* ── colors ─────────────────────────────────────────────── */
+/* ── inputs & buttons ───────────────────────────────────── */
 
-/* ── layout ─────────────────────────────────────────────── */
+/* ── layout utilities ───────────────────────────────────── */
 `
 }
-
 
 // ── Helper: default value by type ───────────────────────────
 function defaultValue(type, value) {

@@ -1,94 +1,33 @@
-// ============================================================
-// webccMock.js
-// Generates a self-contained HTML document for the iframe
-// preview. Respects index.html load order and head/body
-// placement, and compensates for parent page zoom level so
-// click/hover hit zones are always accurate.
-// ============================================================
-
 export function generateMockHtml(indexHtml, codeJs, libraries, zoomFactor = 1) {
-
-  // ── Build a lookup: filename → inlined content ────────────
-  const libMap = {}
-  libraries
+  const libScripts = libraries
     .filter(l => l.name.trim() && l.content.trim())
-    .forEach(l => { libMap[l.name.trim()] = l.content })
+    .map(l => {
+      if (l.name.endsWith('.css')) {
+        return `<style>/* ${l.name} */\n${l.content}</style>`
+      }
+      return `<script>/* ${l.name} */\n${l.content}<\/script>`
+    })
+    .join('\n')
 
-  // ── Parse <head> from index.html ─────────────────────────
-  const headMatch = indexHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i)
-  const headRaw = headMatch ? headMatch[1] : ''
-
-  // ── Parse <body> from index.html ─────────────────────────
   const bodyMatch = indexHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i)
-  const bodyRaw = bodyMatch ? bodyMatch[1] : '<div id="cwc-root"></div>'
+  const bodyContent = bodyMatch
+    ? bodyMatch[1]
+        .replace(/<script[^>]*src="\.\/libraries\/[^"]*"[^>]*><\/script>/gi, '')
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .trim()
+    : '<div id="cwc-root"></div>'
 
-  // ── Inline a library tag ──────────────────────────────────
-  const inlineLibTag = (tag) => {
-    const linkMatch = tag.match(/href="\.\/libraries\/([^"]+)"/)
-    if (linkMatch) {
-      const name = linkMatch[1]
-      const content = libMap[name]
-      if (content) return `<style>/* ${name} */\n${content}\n</style>`
-      return `<!-- library not found: ${name} -->`
-    }
-    const scriptMatch = tag.match(/src="\.\/libraries\/([^"]+)"/)
-    if (scriptMatch) {
-      const name = scriptMatch[1]
-      if (name === 'webcc.min.js') return null
-      const content = libMap[name]
-      if (content) return `<script>/* ${name} */\n${content}\n<\/script>`
-      return `<!-- library not found: ${name} -->`
-    }
-    return null
-  }
+  const styleMatch = indexHtml.match(/<style[^>]*>([\s\S]*?)<\/style>/gi)
+  const styles = styleMatch ? styleMatch.join('\n') : ''
 
-  // ── Process <head> ────────────────────────────────────────
-  const headLines = []
-  headRaw.replace(/<link[^>]+href="\.\/libraries\/[^"]*"[^>]*\/?>/gi, (tag) => {
-    const inlined = inlineLibTag(tag)
-    if (inlined) headLines.push(inlined)
-  })
-  headRaw.replace(/<script[^>]+src="\.\/libraries\/[^"]*"[^>]*><\/script>/gi, (tag) => {
-    const inlined = inlineLibTag(tag)
-    if (inlined) headLines.push(inlined)
-  })
+  // Compensate for parent page zoom so click/hover hit zones are accurate
+  const zoomStyle = zoomFactor !== 1
+    ? `<style>html { zoom: ${1 / zoomFactor}; }</style>`
+    : ''
 
-  // Keep user <style> blocks verbatim
-  const userStyles = []
-  headRaw.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (tag) => {
-    userStyles.push(tag)
-  })
-
-  // ── Process <body> ────────────────────────────────────────
-  const bodyContent = bodyRaw
-    .replace(/<script[^>]*src="\.\/libraries\/[^"]*"[^>]*><\/script>/gi, '')
-    .replace(/<script[^>]*src="\.\/code\.js"[^>]*><\/script>/gi, '')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .trim()
-
-  // Collect body scripts in index.html order
-  const bodyScripts = []
-  bodyRaw.replace(/<script[^>]+src="\.\/libraries\/([^"]+)"[^>]*><\/script>/gi, (tag, name) => {
-    if (name === 'webcc.min.js') return
-    const content = libMap[name]
-    if (content) bodyScripts.push(`<script>/* ${name} */\n${content}\n<\/script>`)
-    else bodyScripts.push(`<!-- library not found: ${name} -->`)
-  })
-
-  // ── Zoom compensation ─────────────────────────────────────
-  // When the parent page is zoomed (e.g. 80%), mouse event
-  // coordinates are reported in zoomed CSS pixels, shifting
-  // hit zones away from their visual positions inside the
-  // iframe. Applying an inverse zoom to the iframe's <html>
-  // element realigns coordinates with visual positions.
-  const zoomStyle = zoomFactor !== 1 ? `
-  <style>
-    html { zoom: ${(1 / zoomFactor).toFixed(4)}; }
-  </style>` : ''
-
-  // ── WebCC mock implementation ─────────────────────────────
   const mockJs = `
     window.WebCC = {
+
       Properties: {},
 
       Events: {
@@ -99,7 +38,9 @@ export function generateMockHtml(indexHtml, codeJs, libraries, zoomFactor = 1) {
 
       onPropertyChanged: {
         _subscribers: [],
-        subscribe: function(fn) { this._subscribers.push(fn); },
+        subscribe: function(fn) {
+          this._subscribers.push(fn);
+        },
         unsubscribe: function(fn) {
           this._subscribers = this._subscribers.filter(function(s) { return s !== fn; });
         },
@@ -113,6 +54,7 @@ export function generateMockHtml(indexHtml, codeJs, libraries, zoomFactor = 1) {
       },
 
       start: function(callback, contracts, extensions, timeout) {
+        this._contracts = contracts || {};
         if (contracts && contracts.properties) {
           var props = contracts.properties;
           for (var key in props) {
@@ -122,7 +64,9 @@ export function generateMockHtml(indexHtml, codeJs, libraries, zoomFactor = 1) {
           }
         }
         window.parent.postMessage({ type: 'cwc-ready' }, '*');
-        if (typeof callback === 'function') callback(true);
+        if (typeof callback === 'function') {
+          callback(true);
+        }
       },
 
       _trigger: function(key, value) {
@@ -134,9 +78,12 @@ export function generateMockHtml(indexHtml, codeJs, libraries, zoomFactor = 1) {
     window.webcc = window.WebCC;
 
     // ── Console capture ───────────────────────────────────────
-    // Override all console methods and Trace() so output appears
-    // in the CWC Builder event log instead of only in DevTools.
+    // Intercepts console.log/warn/error/info and forwards to
+    // the CWC Builder event log via cwc-console postMessage.
     (function() {
+      // Save originals BEFORE patching so internal calls don't double-post
+      var _origLog = console.log.bind(console);
+
       var methods = { log: 'log', warn: 'warn', error: 'error', info: 'info' };
       Object.keys(methods).forEach(function(method) {
         var original = console[method].bind(console);
@@ -146,41 +93,54 @@ export function generateMockHtml(indexHtml, codeJs, libraries, zoomFactor = 1) {
             try { return typeof a === 'object' ? JSON.stringify(a) : String(a); }
             catch(e) { return String(a); }
           });
-          window.parent.postMessage({
-            type: 'cwc-console',
-            level: method,
-            message: parts.join(' ')
-          }, '*');
+          window.parent.postMessage({ type: 'cwc-console', level: method, message: parts.join(' ') }, '*');
         };
       });
 
-      // HMIRuntime.Trace(msg) — correct WinCC Unified API for diagnostic trace
-      // Also exposed as global Trace() for convenience during development
+      // ── HMIRuntime.Trace ──────────────────────────────────
+      // The correct WinCC Unified API for diagnostic output.
+      // Shown as a purple ◈ entry in the CWC Builder event log.
+      // On real HMI panels this writes to the TIA Portal Trace Viewer.
+      // console.log() is SILENT on real panels — always prefer HMIRuntime.Trace.
       function _trace() {
         var parts = Array.prototype.slice.call(arguments).map(function(a) {
           try { return typeof a === 'object' ? JSON.stringify(a) : String(a); }
           catch(e) { return String(a); }
         });
-        console.log.apply(console, arguments); // pass-through to DevTools
-        window.parent.postMessage({
-          type: 'cwc-console',
-          level: 'trace',
-          message: parts.join(' ')
-        }, '*');
+        _origLog.apply(console, arguments); // use pre-patch original — avoids double log entry
+        window.parent.postMessage({ type: 'cwc-console', level: 'trace', message: parts.join(' ') }, '*');
       }
 
-      window.HMIRuntime = {
-        Trace: _trace
-      };
-
-      // global Trace() alias — not available in real WinCC Unified,
-      // but convenient shorthand during preview development
-      window.Trace = _trace;
+      window.HMIRuntime = { Trace: _trace };
+      window.Trace = _trace; // preview-only alias — not available on real HMI panels
     })();
 
+    // ── Message handler ───────────────────────────────────────
     window.addEventListener('message', function(e) {
-      if (e.data && e.data.type === 'cwc-set') {
+      if (!e.data) return;
+
+      // Property push from Property Panel
+      if (e.data.type === 'cwc-set') {
         window.WebCC._trigger(e.data.name, e.data.value);
+      }
+
+      // Method call from Method Panel.
+      // Calls contracts.methods[name](params) if registered, then always
+      // dispatches a CustomEvent for addEventListener-style handlers:
+      //   document.addEventListener('cwc-method-Reset', fn)
+      if (e.data.type === 'cwc-call-method') {
+        var methodName = e.data.name;
+        var params = e.data.params || {};
+        var contracts = window.WebCC._contracts;
+        if (contracts && contracts.methods && typeof contracts.methods[methodName] === 'function') {
+          try { contracts.methods[methodName](params); }
+          catch(err) {
+            window.parent.postMessage(
+              { type: 'cwc-error', message: 'Method ' + methodName + ': ' + err.message }, '*'
+            );
+          }
+        }
+        document.dispatchEvent(new CustomEvent('cwc-method-' + methodName, { detail: params }));
       }
     });
   `
@@ -195,13 +155,12 @@ export function generateMockHtml(indexHtml, codeJs, libraries, zoomFactor = 1) {
     html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
   </style>
   ${zoomStyle}
-  ${userStyles.join('\n  ')}
-  ${headLines.join('\n  ')}
+  ${styles}
   <script>${mockJs}<\/script>
+  ${libScripts}
 </head>
 <body>
   ${bodyContent}
-  ${bodyScripts.join('\n  ')}
   <script>
     try {
       ${codeJs}

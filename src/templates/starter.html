@@ -4,22 +4,27 @@
   <meta charset="UTF-8" />
   <script src="./libraries/webcc.min.js"></script>
   {{LIB_STYLES}}
+  <link rel="stylesheet" href="./libraries/theme.css" />
+  <style id="cwc-custom-style">/* injected at runtime via customCSS property */</style>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; }
-
-    /* ── layout ─────────────────────────────────────── */
+    /* ── structural reset (not overridable via theme) ── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
     #cwc-root {
       width: 100%;
       height: 100%;
     }
-
-    /* canvas is hidden by default — enable in code.js   */
-    /* with: canvas.style.display = 'block';              */
+    /* canvas hidden by default — enable in code.js with canvas.style.display = 'block' */
     #cwc-canvas {
       width: 100%;
+      height: 100%;
       position: absolute;
-      bottom: 0;
+      top: 0;
+      left: 0;
       display: none;
       pointer-events: none;
     }

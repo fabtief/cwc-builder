@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { useProject } from '../../store/projectStore'
 
 const PROPERTY_TYPES = ['number', 'string', 'boolean', 'array']
+const PARAM_TYPES    = ['string', 'number', 'boolean']
 
 const emptyProperty = () => ({ id: crypto.randomUUID(), name: '', type: 'number', defaultValue: '' })
-const emptyEvent = () => ({ id: crypto.randomUUID(), name: '', parameters: '' })
-const emptyMethod = () => ({ id: crypto.randomUUID(), name: '', parameters: '' })
+const emptyEvent    = () => ({ id: crypto.randomUUID(), name: '', parameters: '', paramTypes: '' })
+const emptyMethod   = () => ({ id: crypto.randomUUID(), name: '', parameters: '', paramTypes: '' })
 
 function SectionHeader({ title, description }) {
   return (
@@ -41,6 +42,40 @@ function RemoveButton({ onClick, disabled }) {
   )
 }
 
+// Renders a type badge per parameter, appearing below the name/params row
+// when parameters are defined.
+function ParamTypeRow({ parameters, paramTypes, onChange }) {
+  const names = (parameters || '').split(',').map(s => s.trim()).filter(Boolean)
+  if (names.length === 0) return null
+
+  const types = (paramTypes || '').split(',').map(s => s.trim())
+
+  const setType = (i, value) => {
+    const updated = names.map((_, idx) => types[idx] || 'string')
+    updated[i] = value
+    onChange(updated.join(', '))
+  }
+
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 pl-1">
+      {names.map((name, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-500 font-mono">{name}:</span>
+          <select
+            value={types[i] || 'string'}
+            onChange={e => setType(i, e.target.value)}
+            className="bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5
+                       text-xs text-gray-200 focus:outline-none focus:border-blue-500"
+          >
+            {PARAM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+
 export default function Step3_Interface({ onNext, onBack }) {
   const { project, updateProject } = useProject()
 
@@ -71,7 +106,7 @@ export default function Step3_Interface({ onNext, onBack }) {
     setEvents(prev => prev.map(e => e.id === id ? { ...e, [field]: value } : e))
     setErrors(prev => ({ ...prev, [`evt_${id}`]: null }))
   }
-  const addEvent = () => setEvents(prev => [...prev, emptyEvent()])
+  const addEvent    = () => setEvents(prev => [...prev, emptyEvent()])
   const removeEvent = (id) => setEvents(prev => prev.filter(e => e.id !== id))
 
   // Methods
@@ -79,29 +114,20 @@ export default function Step3_Interface({ onNext, onBack }) {
     setMethods(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m))
     setErrors(prev => ({ ...prev, [`mth_${id}`]: null }))
   }
-  const addMethod = () => setMethods(prev => [...prev, emptyMethod()])
+  const addMethod    = () => setMethods(prev => [...prev, emptyMethod()])
   const removeMethod = (id) => setMethods(prev => prev.filter(m => m.id !== id))
 
   const validate = () => {
     const e = {}
-    properties.forEach(p => {
-      if (!p.name.trim()) e[`prop_${p.id}`] = 'Name required'
-    })
-    events.forEach(ev => {
-      if (!ev.name.trim()) e[`evt_${ev.id}`] = 'Name required'
-    })
-    methods.forEach(m => {
-      if (!m.name.trim()) e[`mth_${m.id}`] = 'Name required'
-    })
+    properties.forEach(p  => { if (!p.name.trim())  e[`prop_${p.id}`]  = 'Name required' })
+    events.forEach(ev      => { if (!ev.name.trim()) e[`evt_${ev.id}`]  = 'Name required' })
+    methods.forEach(m      => { if (!m.name.trim())  e[`mth_${m.id}`]   = 'Name required' })
     return e
   }
 
   const handleNext = () => {
     const e = validate()
-    if (Object.keys(e).length > 0) {
-      setErrors(e)
-      return
-    }
+    if (Object.keys(e).length > 0) { setErrors(e); return }
     updateProject({ properties, events, methods })
     onNext()
   }
@@ -121,7 +147,6 @@ export default function Step3_Interface({ onNext, onBack }) {
           description="Data values that TIA Portal can read from or write to your control."
         />
         <div className="flex flex-col gap-2">
-          {/* Column headers */}
           <div className="grid grid-cols-12 gap-2 px-1">
             <span className="col-span-5 text-xs text-gray-600 uppercase tracking-wide">Name</span>
             <span className="col-span-3 text-xs text-gray-600 uppercase tracking-wide">Type</span>
@@ -147,9 +172,7 @@ export default function Step3_Interface({ onNext, onBack }) {
                   className="col-span-3 bg-gray-800 border border-gray-600 rounded px-3 py-1.5
                              text-sm text-gray-100 focus:outline-none focus:border-blue-500"
                 >
-                  {PROPERTY_TYPES.map(t => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
+                  {PROPERTY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
                 <input
                   type="text"
@@ -187,13 +210,13 @@ export default function Step3_Interface({ onNext, onBack }) {
             <div className="grid grid-cols-12 gap-2 px-1">
               <span className="col-span-5 text-xs text-gray-600 uppercase tracking-wide">Name</span>
               <span className="col-span-6 text-xs text-gray-600 uppercase tracking-wide">
-                Parameters <span className="normal-case">(optional, comma-separated)</span>
+                Parameters <span className="normal-case">(comma-separated)</span>
               </span>
               <span className="col-span-1"></span>
             </div>
           )}
           {events.map(evt => (
-            <div key={evt.id}>
+            <div key={evt.id} className="bg-gray-800/30 rounded-md px-3 py-2.5 border border-gray-700/40">
               <div className="grid grid-cols-12 gap-2 items-center">
                 <input
                   type="text"
@@ -217,8 +240,13 @@ export default function Step3_Interface({ onNext, onBack }) {
                   <RemoveButton onClick={() => removeEvent(evt.id)} />
                 </div>
               </div>
+              <ParamTypeRow
+                parameters={evt.parameters}
+                paramTypes={evt.paramTypes || ''}
+                onChange={val => updateEvent(evt.id, 'paramTypes', val)}
+              />
               {errors[`evt_${evt.id}`] && (
-                <p className="text-xs text-red-400 mt-0.5 ml-1">{errors[`evt_${evt.id}`]}</p>
+                <p className="text-xs text-red-400 mt-1">{errors[`evt_${evt.id}`]}</p>
               )}
             </div>
           ))}
@@ -240,13 +268,13 @@ export default function Step3_Interface({ onNext, onBack }) {
             <div className="grid grid-cols-12 gap-2 px-1">
               <span className="col-span-5 text-xs text-gray-600 uppercase tracking-wide">Name</span>
               <span className="col-span-6 text-xs text-gray-600 uppercase tracking-wide">
-                Parameters <span className="normal-case">(optional, comma-separated)</span>
+                Parameters <span className="normal-case">(comma-separated)</span>
               </span>
               <span className="col-span-1"></span>
             </div>
           )}
           {methods.map(mth => (
-            <div key={mth.id}>
+            <div key={mth.id} className="bg-gray-800/30 rounded-md px-3 py-2.5 border border-gray-700/40">
               <div className="grid grid-cols-12 gap-2 items-center">
                 <input
                   type="text"
@@ -270,8 +298,13 @@ export default function Step3_Interface({ onNext, onBack }) {
                   <RemoveButton onClick={() => removeMethod(mth.id)} />
                 </div>
               </div>
+              <ParamTypeRow
+                parameters={mth.parameters}
+                paramTypes={mth.paramTypes || ''}
+                onChange={val => updateMethod(mth.id, 'paramTypes', val)}
+              />
               {errors[`mth_${mth.id}`] && (
-                <p className="text-xs text-red-400 mt-0.5 ml-1">{errors[`mth_${mth.id}`]}</p>
+                <p className="text-xs text-red-400 mt-1">{errors[`mth_${mth.id}`]}</p>
               )}
             </div>
           ))}

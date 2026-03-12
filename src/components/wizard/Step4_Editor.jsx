@@ -73,10 +73,11 @@ export default function Step4_Editor({ onNext, onBack }) {
 
   // ── Push theme.css to preview as customCSS ───────────────
   useEffect(() => {
-    if (!iframeWindowRef.current) return
     const css = stripThemeComments(themeCss)
     if (css.trim()) {
-      iframeWindowRef.current.postMessage({ type: 'cwc-set', name: 'customCSS', value: css }, '*')
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'cwc-set', name: 'customCSS', value: css }, '*'
+      )
     }
   }, [themeCss])
 
@@ -88,11 +89,13 @@ export default function Step4_Editor({ onNext, onBack }) {
         case 'cwc-ready':
           setIframeReady(true)
           setIframeError(null)
-          iframeWindowRef.current = e.source
+          iframeWindowRef.current = iframeRef.current?.contentWindow ?? null
           const css = stripThemeComments(themeCss)
           if (css.trim()) {
             setTimeout(() => {
-              if (e.source) e.source.postMessage({ type: 'cwc-set', name: 'customCSS', value: css }, '*')
+              iframeRef.current?.contentWindow?.postMessage(
+                { type: 'cwc-set', name: 'customCSS', value: css }, '*'
+              )
             }, 100)
           }
           break
@@ -142,9 +145,7 @@ export default function Step4_Editor({ onNext, onBack }) {
   const sendProperty = (name, value, type) => {
     const parsed = parseValue(value, type)
     setPropertyValues(prev => ({ ...prev, [name]: value }))
-    if (iframeWindowRef.current) {
-      iframeWindowRef.current.postMessage({ type: 'cwc-set', name, value: parsed }, '*')
-    }
+    iframeRef.current?.contentWindow?.postMessage({ type: 'cwc-set', name, value: parsed }, '*')
   }
 
   // ── Change handlers ──────────────────────────────────────
@@ -566,11 +567,7 @@ Based on the existing files above:
                 }`}>
                   {iframeError ? 'Error' : iframeReady ? 'Running' : 'Loading...'}
                 </span>
-                <button
-                  onClick={() => refreshPreview(indexHtml, codeJs)}
-                  className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
-                  title="Refresh preview"
-                >↺</button>
+
                 <button
                   onClick={() => {
                     const blob = new Blob([iframeContent], { type: 'text/html' })
@@ -602,63 +599,19 @@ Based on the existing files above:
             </div>
           </div>
 
-          {/* ── Bottom row: Property Panel + Event Log ── */}
-          <div className="flex gap-3 shrink-0">
-
-            {/* Property Panel */}
-            <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex-1">
-              <p className="text-xs font-semibold text-gray-400 mb-2">Property Panel</p>
-              {properties.length === 0 ? (
-                <p className="text-xs text-gray-600 italic">No properties defined in Step 3.</p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {properties.map(p => (
-                    <div key={p.id}>
-                      <div className="flex items-center justify-between mb-0.5">
-                        <label className="text-xs text-gray-400 font-medium">{p.name}</label>
-                        <span className="text-xs text-gray-600">{p.type}</span>
-                      </div>
-                      <PropertyInput
-                        type={p.type}
-                        value={propertyValues[p.name] ?? p.defaultValue ?? ''}
-                        onChange={(val) => sendProperty(p.name, val, p.type)}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Event Log */}
-            <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex-1">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-gray-400">Event Log</p>
-                {eventLog.length > 0 && (
-                  <button onClick={() => setEventLog([])}
-                    className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
-                    Clear
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-col gap-1 max-h-28 overflow-y-auto">
-                {eventLog.length === 0 ? (
-                  <p className="text-xs text-gray-600 italic">No events yet...</p>
-                ) : eventLog.map(entry => (
-                  <div key={entry.id} className="flex items-center gap-1.5 text-xs font-mono">
-                    <span className="text-gray-600 shrink-0">{entry.time}</span>
-                    <span className={`shrink-0 ${logColor(entry.type)}`}>
-                      {logIcon(entry.type)}
-                    </span>
-                    <span className={`shrink-0 ${logColor(entry.type)}`}>{entry.name}</span>
-                    <span className="text-gray-500 truncate">{entry.params}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </div>
+          {/* ── Bottom row: Panel tabs ── */}
+          <ControlPanel
+            properties={properties}
+            events={project.events.filter(e => e.name.trim())}
+            methods={project.methods.filter(m => m.name.trim())}
+            propertyValues={propertyValues}
+            eventLog={eventLog}
+            iframeWindowRef={iframeWindowRef}
+            sendProperty={sendProperty}
+            setEventLog={setEventLog}
+          />
+        </div>{/* end right column */}
+      </div>{/* end main flex */}
 
       {/* ── Navigation ──────────────────────────────────── */}
       <div className="flex justify-between">
@@ -687,9 +640,10 @@ function logColor(type) {
     case 'console-warn':   return 'text-yellow-400'
     case 'console-trace':  return 'text-purple-400'
     case 'event':          return 'text-yellow-400'
+    case 'method':         return 'text-blue-400'
     case 'propset':        return 'text-blue-400'
+    case 'console-info':   return 'text-gray-400'
     case 'console-log':
-    case 'console-info':
     default:               return 'text-gray-400'
   }
 }
@@ -701,6 +655,7 @@ function logIcon(type) {
     case 'console-warn':   return '⚠'
     case 'console-trace':  return '◈'
     case 'event':          return '▶'
+    case 'method':         return '↪'
     case 'propset':        return '←'
     case 'console-info':   return 'ℹ'
     case 'console-log':
@@ -759,4 +714,274 @@ function PropertyInput({ type, value, onChange }) {
                      text-xs text-gray-100 focus:outline-none focus:border-blue-500" />
       )
   }
+}
+
+// ── ControlPanel ──────────────────────────────────────────────
+// Three-tab panel: Properties | Events | Methods
+
+function ControlPanel({ properties, events, methods, propertyValues, eventLog,
+                        iframeWindowRef, sendProperty, setEventLog }) {
+  const [activeTab, setActiveTab] = useState('properties')
+  const [methodInputs, setMethodInputs] = useState({})   // { 'MethodName:paramName': value }
+  const [eventInputs, setEventInputs]   = useState({})   // { 'EventName:paramName': value }
+
+  const tabs = [
+    { id: 'properties', label: 'Properties', count: properties.length },
+    { id: 'events',     label: 'Events',     count: events.length },
+    { id: 'methods',    label: 'Methods',    count: methods.length },
+  ]
+
+  // ── Parse param types for an event/method ──────────────────
+  const parseParams = (item) => {
+    const names = (item.parameters || '').split(',').map(s => s.trim()).filter(Boolean)
+    const types = (item.paramTypes  || '').split(',').map(s => s.trim())
+    return names.map((name, i) => ({
+      name,
+      type: ['string', 'number', 'boolean'].includes(types[i]) ? types[i] : 'string'
+    }))
+  }
+
+  // ── Fire an event into the iframe (simulates control firing it) ─
+  const fireEvent = (evt) => {
+    const params = parseParams(evt)
+    const payload = {}
+    params.forEach(p => {
+      const raw = eventInputs[`${evt.name}:${p.name}`] ?? ''
+      payload[p.name] = parseValue(raw, p.type)
+    })
+    // Log it
+    setEventLog(prev => [{
+      id: crypto.randomUUID(),
+      time: new Date().toLocaleTimeString(),
+      name: evt.name,
+      params: JSON.stringify(payload),
+      type: 'event'
+    }, ...prev].slice(0, 50))
+    // Also forward to iframe so HMIRuntime.Trace / code.js can react
+    if (iframeWindowRef.current) {
+      iframeWindowRef.current.postMessage(
+        { type: 'cwc-fire-event', name: evt.name, params: payload }, '*'
+      )
+    }
+  }
+
+  // ── Call a method on the iframe control ────────────────────
+  const callMethod = (mth) => {
+    const params = parseParams(mth)
+    const payload = {}
+    params.forEach(p => {
+      const raw = methodInputs[`${mth.name}:${p.name}`] ?? ''
+      payload[p.name] = parseValue(raw, p.type)
+    })
+    if (iframeWindowRef.current) {
+      iframeWindowRef.current.postMessage(
+        { type: 'cwc-call-method', name: mth.name, params: payload }, '*'
+      )
+    }
+    // Log the call
+    setEventLog(prev => [{
+      id: crypto.randomUUID(),
+      time: new Date().toLocaleTimeString(),
+      name: `↪ ${mth.name}()`,
+      params: JSON.stringify(payload),
+      type: 'method'
+    }, ...prev].slice(0, 50))
+  }
+
+  const setInput = (store, setStore, key, value) =>
+    setStore(prev => ({ ...prev, [key]: value }))
+
+  return (
+    <div className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden shrink-0">
+
+      {/* Tab bar */}
+      <div className="flex border-b border-gray-700">
+        {tabs.map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors
+              ${activeTab === tab.id
+                ? 'text-gray-100 border-b-2 border-blue-500 -mb-px bg-gray-800/50'
+                : 'text-gray-500 hover:text-gray-300'}`}>
+            {tab.label}
+            {tab.count > 0 && (
+              <span className={`px-1 py-0.5 rounded text-xs
+                ${activeTab === tab.id ? 'bg-blue-900/60 text-blue-300' : 'bg-gray-800 text-gray-600'}`}>
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
+
+        {/* Event log clear — always visible */}
+        <div className="flex-1 flex items-center justify-end pr-2 gap-2">
+          <p className="text-xs text-gray-600">Event Log</p>
+          {eventLog.length > 0 && (
+            <button onClick={() => setEventLog([])}
+              className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex gap-0 min-h-0">
+
+        {/* ── Left: active tab panel ── */}
+        <div className="flex-1 p-3 overflow-y-auto overflow-x-hidden max-h-44">
+
+          {/* Properties tab */}
+          {activeTab === 'properties' && (
+            properties.length === 0
+              ? <p className="text-xs text-gray-600 italic">No properties defined in Step 3.</p>
+              : <div className="flex flex-col gap-2">
+                  {properties.map(p => (
+                    <div key={p.id || p.name}>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <label className="text-xs text-gray-400 font-medium">{p.name}</label>
+                        <span className="text-xs text-gray-600">{p.type}</span>
+                      </div>
+                      <PropertyInput
+                        type={p.type}
+                        value={propertyValues[p.name] ?? p.defaultValue ?? ''}
+                        onChange={(val) => sendProperty(p.name, val, p.type)}
+                      />
+                    </div>
+                  ))}
+                </div>
+          )}
+
+          {/* Events tab */}
+          {activeTab === 'events' && (
+            events.length === 0
+              ? <p className="text-xs text-gray-600 italic">No events defined in Step 3.</p>
+              : <div className="flex flex-col gap-2">
+                  {events.map(evt => {
+                    const params = parseParams(evt)
+                    return (
+                      <div key={evt.id || evt.name}
+                        className="bg-gray-800/50 rounded border border-gray-700/50 px-2 py-1.5">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-medium text-yellow-400 flex-1">▶ {evt.name}</span>
+                          <button onClick={() => fireEvent(evt)}
+                            className="px-2 py-0.5 bg-yellow-700/60 hover:bg-yellow-600/80
+                                       border border-yellow-700 rounded text-xs text-yellow-200
+                                       transition-colors font-medium">
+                            Fire
+                          </button>
+                        </div>
+                        {params.length > 0 && (
+                          <div className="flex flex-col gap-1">
+                            {params.map(p => (
+                              <div key={p.name} className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500 font-mono w-20 shrink-0 truncate"
+                                  title={p.name}>{p.name}</span>
+                                <span className="text-xs text-gray-700 shrink-0">{p.type}</span>
+                                <ParamInput type={p.type}
+                                  value={eventInputs[`${evt.name}:${p.name}`] ?? ''}
+                                  onChange={v => setInput(eventInputs, setEventInputs, `${evt.name}:${p.name}`, v)} />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {params.length === 0 && (
+                          <p className="text-xs text-gray-600 italic">No parameters</p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+          )}
+
+          {/* Methods tab */}
+          {activeTab === 'methods' && (
+            methods.length === 0
+              ? <p className="text-xs text-gray-600 italic">No methods defined in Step 3.</p>
+              : <div className="flex flex-col gap-2">
+                  {methods.map(mth => {
+                    const params = parseParams(mth)
+                    return (
+                      <div key={mth.id || mth.name}
+                        className="bg-gray-800/50 rounded border border-gray-700/50 px-2 py-1.5">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-medium text-blue-400 flex-1 font-mono">{mth.name}()</span>
+                          <button onClick={() => callMethod(mth)}
+                            className="px-2 py-0.5 bg-blue-700/60 hover:bg-blue-600/80
+                                       border border-blue-700 rounded text-xs text-blue-200
+                                       transition-colors font-medium">
+                            Call
+                          </button>
+                        </div>
+                        {params.length > 0 && (
+                          <div className="flex flex-col gap-1">
+                            {params.map(p => (
+                              <div key={p.name} className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500 font-mono w-20 shrink-0 truncate"
+                                  title={p.name}>{p.name}</span>
+                                <span className="text-xs text-gray-700 shrink-0">{p.type}</span>
+                                <ParamInput type={p.type}
+                                  value={methodInputs[`${mth.name}:${p.name}`] ?? ''}
+                                  onChange={v => setInput(methodInputs, setMethodInputs, `${mth.name}:${p.name}`, v)} />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {params.length === 0 && (
+                          <p className="text-xs text-gray-600 italic">No parameters</p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+          )}
+        </div>
+
+        {/* ── Right: Event log ── */}
+        <div className="flex-1 border-l border-gray-700 p-3 overflow-y-auto overflow-x-auto max-h-44 min-w-0">
+          {eventLog.length === 0
+            ? <p className="text-xs text-gray-600 italic">No events yet...</p>
+            : eventLog.map(entry => (
+                <div key={entry.id} className="flex items-start gap-1.5 text-xs font-mono mb-0.5 min-w-max">
+                  <span className="text-gray-600 shrink-0">{entry.time}</span>
+                  <span className={`shrink-0 ${logColor(entry.type)}`}>{logIcon(entry.type)}</span>
+                  <span className={`shrink-0 ${logColor(entry.type)}`}>{entry.name}</span>
+                  <span className="text-gray-400 whitespace-nowrap">{entry.params}</span>
+                </div>
+              ))
+          }
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── ParamInput — compact input for event/method params ────────
+function ParamInput({ type, value, onChange }) {
+  if (type === 'boolean') {
+    return (
+      <div className="flex gap-1 flex-1">
+        {['true', 'false'].map(v => (
+          <button key={v} onClick={() => onChange(v)}
+            className={`flex-1 py-0.5 rounded text-xs transition-colors
+              ${String(value) === v
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>
+            {v}
+          </button>
+        ))}
+      </div>
+    )
+  }
+  if (type === 'number') {
+    return (
+      <input type="number" value={value} onChange={e => onChange(e.target.value)}
+        className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-0.5
+                   text-xs text-gray-100 focus:outline-none focus:border-blue-500" />
+    )
+  }
+  return (
+    <input type="text" value={value} onChange={e => onChange(e.target.value)}
+      placeholder="value"
+      className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-0.5
+                 text-xs text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+  )
 }

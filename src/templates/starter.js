@@ -16,6 +16,7 @@ function setProperty(data) {
 }
 
 
+{{METHOD_HANDLERS}}
 // ── INIT ─────────────────────────────────────────────────────
 WebCC.start(
     function(result) {
