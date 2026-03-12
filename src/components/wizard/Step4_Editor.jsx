@@ -1,10 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useProject } from '../../store/projectStore'
 import { generateScaffold, generateHtml, generateThemeCss } from '../../lib/scaffoldGenerator'
 import { generateManifest } from '../../lib/manifestGenerator'
 import { generateMockHtml } from '../../lib/webccMock'
 import { exportZip, downloadThemeCss } from '../../lib/zipExporter'
 import { TEMPLATES } from '../../templates/index'
+import CodeMirror from '@uiw/react-codemirror'
+import { javascript } from '@codemirror/lang-javascript'
+import { html } from '@codemirror/lang-html'
+import { css } from '@codemirror/lang-css'
+import { json } from '@codemirror/lang-json'
+import { oneDark } from '@codemirror/theme-one-dark'
+import { EditorView } from '@codemirror/view'
 
 // ── Tab definitions ──────────────────────────────────────────
 const TABS = [
@@ -24,6 +31,7 @@ export default function Step4_Editor({ onNext, onBack }) {
   const [themeCss, setThemeCss]   = useState('')
   const [manifestJson, setManifestJson] = useState('')
   const [confirmRegenerate, setConfirmRegenerate] = useState(false)
+  const [confirmRegenerateManifest, setConfirmRegenerateManifest] = useState(false)
   const [copied, setCopied]         = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [showExportInfo, setShowExportInfo] = useState(false)
@@ -58,17 +66,11 @@ export default function Step4_Editor({ onNext, onBack }) {
     setManifestJson(JSON.stringify(JSON.parse(manifest), null, 2))
   }, [])
 
-  // ── Refresh manifest when switching to it ───────────────
-  useEffect(() => {
-    if (activeTab === 'manifest.json') {
-      setManifestJson(generateManifest(project.metadata, project.properties, project.events, project.methods))
-    }
-  }, [activeTab])
-
-  // ── Auto-refresh preview on code/html change ────────────
+  // ── Auto-refresh preview — debounced 3s after last keystroke
   useEffect(() => {
     if (!codeJs && !indexHtml) return
-    refreshPreview(indexHtml, codeJs)
+    const timer = setTimeout(() => refreshPreview(indexHtml, codeJs), 3000)
+    return () => clearTimeout(timer)
   }, [codeJs, indexHtml])
 
   // ── Push theme.css to preview as customCSS ───────────────
@@ -102,7 +104,11 @@ export default function Step4_Editor({ onNext, onBack }) {
         case 'cwc-event':
           setEventLog(prev => [{
             id: crypto.randomUUID(), time: new Date().toLocaleTimeString(),
-            name: e.data.name, params: JSON.stringify(e.data.params || {}), type: 'event'
+            name: e.data.name,
+            params: Array.isArray(e.data.params) && e.data.params.length > 0
+              ? e.data.params.map(a => JSON.stringify(a)).join(', ')
+              : '',
+            type: 'event'
           }, ...prev].slice(0, 50))
           break
         case 'cwc-propset':
@@ -113,12 +119,17 @@ export default function Step4_Editor({ onNext, onBack }) {
           break
         case 'cwc-error':
           setIframeError(e.data.message)
+          setIframeReady(false)
           setEventLog(prev => [{
             id: crypto.randomUUID(), time: new Date().toLocaleTimeString(),
             name: 'ERROR', params: e.data.message, type: 'error'
           }, ...prev].slice(0, 50))
           break
         case 'cwc-console':
+          if (e.data.level === 'error') {
+            setIframeError(e.data.message)
+            setIframeReady(false)
+          }
           setEventLog(prev => [{
             id: crypto.randomUUID(), time: new Date().toLocaleTimeString(),
             name: e.data.level, params: e.data.message, type: 'console-' + e.data.level
@@ -164,6 +175,12 @@ export default function Step4_Editor({ onNext, onBack }) {
     updateProject({ codeJs: scaffold, indexHtml: html, themeCss: theme })
     setConfirmRegenerate(false)
     setActiveTab('code.js')
+  }
+
+  const handleRegenerateManifest = () => {
+    const manifest = generateManifest(project.metadata, project.properties, project.events, project.methods)
+    setManifestJson(JSON.stringify(JSON.parse(manifest), null, 2))
+    setConfirmRegenerateManifest(false)
   }
 
   // ── Export ───────────────────────────────────────────────
@@ -288,12 +305,38 @@ Based on the existing files above:
       case 'code.js':       return { value: codeJs,       onChange: handleCodeChange,  editable: true  }
       case 'index.html':    return { value: indexHtml,    onChange: handleHtmlChange,  editable: true  }
       case 'theme.css':     return { value: themeCss,     onChange: handleThemeChange, editable: true  }
-      case 'manifest.json': return { value: manifestJson, onChange: null,              editable: false }
+      case 'manifest.json': return { value: manifestJson, onChange: (e) => setManifestJson(e.target.value), editable: true  }
       default:              return { value: '',            onChange: null,              editable: false }
     }
   }
 
   const { value, onChange, editable } = currentContent()
+
+  // ── CodeMirror language extension per tab ────────────────
+  const currentLanguage = () => {
+    switch (activeTab) {
+      case 'code.js':       return [javascript()]
+      case 'index.html':    return [html()]
+      case 'theme.css':     return [css()]
+      case 'manifest.json': return [json()]
+      default:              return []
+    }
+  }
+
+  // ── CodeMirror change handler ─────────────────────────────
+  const handleEditorChange = useCallback((val) => {
+    if (onChange) onChange({ target: { value: val } })
+  }, [onChange])
+
+  // ── Custom CodeMirror theme extensions ────────────────────
+  const editorTheme = EditorView.theme({
+    '&': { height: '100%', fontSize: '13px' },
+    '.cm-scroller': { overflow: 'auto', fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace" },
+    '.cm-content': { padding: '12px 0' },
+    '.cm-line': { padding: '0 16px' },
+    '.cm-focused': { outline: 'none' },
+    '.cm-editor': { height: '100%' },
+  })
 
   return (
     <div className="flex flex-col gap-3 h-full">
@@ -421,9 +464,7 @@ Based on the existing files above:
                     {tab.badge && (
                       <span className={`text-xs px-1 rounded ${tab.badgeColor}`}>{tab.badge}</span>
                     )}
-                    {tab.id === 'manifest.json' && (
-                      <span className="text-xs text-gray-600">(read-only)</span>
-                    )}
+
                   </span>
                 </button>
               ))}
@@ -441,31 +482,65 @@ Based on the existing files above:
               </div>
             )}
 
-            {/* Editor textarea */}
-            <textarea
-              value={value}
-              onChange={onChange}
-              readOnly={!editable}
-              spellCheck={false}
-              className={`flex-1 w-full bg-gray-950 text-gray-300 font-mono text-sm p-4
-                          focus:outline-none resize-none leading-relaxed
-                          ${!editable ? 'opacity-60 cursor-default' : ''}`}
-              style={{ tabSize: 4 }}
-              onKeyDown={(e) => {
-                if (e.key === 'Tab' && editable) {
-                  e.preventDefault()
-                  const start = e.target.selectionStart
-                  const end   = e.target.selectionEnd
-                  const next  = value.substring(0, start) + '    ' + value.substring(end)
-                  onChange({ target: { value: next } })
-                  setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = start + 4 }, 0)
-                }
-              }}
-            />
+            {/* CodeMirror editor */}
+            <div className={`flex-1 min-h-0 overflow-hidden ${!editable ? 'opacity-60 pointer-events-none' : ''}`}>
+              <CodeMirror
+                value={value}
+                onChange={handleEditorChange}
+                extensions={[...currentLanguage(), editorTheme]}
+                theme={oneDark}
+                readOnly={!editable}
+                height="100%"
+                style={{ height: '100%' }}
+                basicSetup={{
+                  lineNumbers: true,
+                  foldGutter: true,
+                  autocompletion: true,
+                  bracketMatching: true,
+                  closeBrackets: true,
+                  indentOnInput: true,
+                  tabSize: 4,
+                }}
+              />
+            </div>
           </div>
 
           {/* ── Tools row: Regenerate + AI Prompt ── */}
           <div className="flex gap-3">
+
+            {/* Regenerate manifest — only shown on manifest.json tab */}
+            {activeTab === 'manifest.json' && (
+              <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex-1">
+                <p className="text-xs font-semibold text-gray-400 mb-1">Regenerate Manifest</p>
+                <p className="text-xs text-gray-600 mb-2">
+                  Rebuilds manifest.json from your Step 3 interface definition. Discards manual edits.
+                </p>
+                {!confirmRegenerateManifest ? (
+                  <button
+                    onClick={() => setConfirmRegenerateManifest(true)}
+                    className="w-full text-left px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 rounded
+                               border border-gray-700 hover:border-blue-500 transition-colors"
+                  >
+                    <div className="text-xs text-gray-200 font-medium">↺ Regenerate manifest.json</div>
+                    <div className="text-xs text-gray-600">Overwrites all manual changes</div>
+                  </button>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    <p className="text-xs text-yellow-400">Discard manual edits to manifest.json?</p>
+                    <div className="flex gap-1.5">
+                      <button onClick={handleRegenerateManifest}
+                        className="flex-1 px-2 py-1.5 bg-yellow-700 hover:bg-yellow-600 rounded text-xs font-medium transition-colors">
+                        Yes
+                      </button>
+                      <button onClick={() => setConfirmRegenerateManifest(false)}
+                        className="flex-1 px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium transition-colors">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Regenerate */}
             <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 flex-1">
@@ -602,7 +677,6 @@ Based on the existing files above:
           {/* ── Bottom row: Panel tabs ── */}
           <ControlPanel
             properties={properties}
-            events={project.events.filter(e => e.name.trim())}
             methods={project.methods.filter(m => m.name.trim())}
             propertyValues={propertyValues}
             eventLog={eventLog}
@@ -610,8 +684,8 @@ Based on the existing files above:
             sendProperty={sendProperty}
             setEventLog={setEventLog}
           />
-        </div>{/* end right column */}
-      </div>{/* end main flex */}
+        </div>
+      </div>
 
       {/* ── Navigation ──────────────────────────────────── */}
       <div className="flex justify-between">
@@ -719,15 +793,13 @@ function PropertyInput({ type, value, onChange }) {
 // ── ControlPanel ──────────────────────────────────────────────
 // Three-tab panel: Properties | Events | Methods
 
-function ControlPanel({ properties, events, methods, propertyValues, eventLog,
+function ControlPanel({ properties, methods, propertyValues, eventLog,
                         iframeWindowRef, sendProperty, setEventLog }) {
   const [activeTab, setActiveTab] = useState('properties')
   const [methodInputs, setMethodInputs] = useState({})   // { 'MethodName:paramName': value }
-  const [eventInputs, setEventInputs]   = useState({})   // { 'EventName:paramName': value }
 
   const tabs = [
     { id: 'properties', label: 'Properties', count: properties.length },
-    { id: 'events',     label: 'Events',     count: events.length },
     { id: 'methods',    label: 'Methods',    count: methods.length },
   ]
 
@@ -739,30 +811,6 @@ function ControlPanel({ properties, events, methods, propertyValues, eventLog,
       name,
       type: ['string', 'number', 'boolean'].includes(types[i]) ? types[i] : 'string'
     }))
-  }
-
-  // ── Fire an event into the iframe (simulates control firing it) ─
-  const fireEvent = (evt) => {
-    const params = parseParams(evt)
-    const payload = {}
-    params.forEach(p => {
-      const raw = eventInputs[`${evt.name}:${p.name}`] ?? ''
-      payload[p.name] = parseValue(raw, p.type)
-    })
-    // Log it
-    setEventLog(prev => [{
-      id: crypto.randomUUID(),
-      time: new Date().toLocaleTimeString(),
-      name: evt.name,
-      params: JSON.stringify(payload),
-      type: 'event'
-    }, ...prev].slice(0, 50))
-    // Also forward to iframe so HMIRuntime.Trace / code.js can react
-    if (iframeWindowRef.current) {
-      iframeWindowRef.current.postMessage(
-        { type: 'cwc-fire-event', name: evt.name, params: payload }, '*'
-      )
-    }
   }
 
   // ── Call a method on the iframe control ────────────────────
@@ -847,48 +895,6 @@ function ControlPanel({ properties, events, methods, propertyValues, eventLog,
                       />
                     </div>
                   ))}
-                </div>
-          )}
-
-          {/* Events tab */}
-          {activeTab === 'events' && (
-            events.length === 0
-              ? <p className="text-xs text-gray-600 italic">No events defined in Step 3.</p>
-              : <div className="flex flex-col gap-2">
-                  {events.map(evt => {
-                    const params = parseParams(evt)
-                    return (
-                      <div key={evt.id || evt.name}
-                        className="bg-gray-800/50 rounded border border-gray-700/50 px-2 py-1.5">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-yellow-400 flex-1">▶ {evt.name}</span>
-                          <button onClick={() => fireEvent(evt)}
-                            className="px-2 py-0.5 bg-yellow-700/60 hover:bg-yellow-600/80
-                                       border border-yellow-700 rounded text-xs text-yellow-200
-                                       transition-colors font-medium">
-                            Fire
-                          </button>
-                        </div>
-                        {params.length > 0 && (
-                          <div className="flex flex-col gap-1">
-                            {params.map(p => (
-                              <div key={p.name} className="flex items-center gap-2">
-                                <span className="text-xs text-gray-500 font-mono w-20 shrink-0 truncate"
-                                  title={p.name}>{p.name}</span>
-                                <span className="text-xs text-gray-700 shrink-0">{p.type}</span>
-                                <ParamInput type={p.type}
-                                  value={eventInputs[`${evt.name}:${p.name}`] ?? ''}
-                                  onChange={v => setInput(eventInputs, setEventInputs, `${evt.name}:${p.name}`, v)} />
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {params.length === 0 && (
-                          <p className="text-xs text-gray-600 italic">No parameters</p>
-                        )}
-                      </div>
-                    )
-                  })}
                 </div>
           )}
 

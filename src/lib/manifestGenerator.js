@@ -47,14 +47,15 @@ export function generateManifest(metadata, properties, events, methods) {
       }
     })
 
-  // Events as object { name: { parameters } }
+  // Events as object { name: { arguments } } — Siemens uses "arguments" for events
   const eventsObj = {}
   events
     .filter(e => e.name.trim())
     .forEach(e => {
-      eventsObj[e.name.trim()] = {
-        parameters: buildParams(e.parameters, e.paramTypes)
-      }
+      const args = buildParams(e.parameters, e.paramTypes)
+      eventsObj[e.name.trim()] = Object.keys(args).length > 0
+        ? { arguments: args }
+        : {}
     })
 
   // Methods as object { name: { parameters } }

@@ -31,8 +31,10 @@ export function generateMockHtml(indexHtml, codeJs, libraries, zoomFactor = 1) {
       Properties: {},
 
       Events: {
-        fire: function(name, params) {
-          window.parent.postMessage({ type: 'cwc-event', name: name, params: params }, '*');
+        fire: function(name) {
+          // Collect positional args after name, log as ordered array
+          var args = Array.prototype.slice.call(arguments, 1);
+          window.parent.postMessage({ type: 'cwc-event', name: name, params: args }, '*');
         }
       },
 

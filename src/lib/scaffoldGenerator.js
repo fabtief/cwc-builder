@@ -39,9 +39,13 @@ export function generateScaffold(properties, events, methods) {
     `        setProperty({ key: '${p.name}', value: WebCC.Properties.${p.name} });`
   ).join('\n')
 
-  // event listener stubs
-  const eventListeners = evts.map(e => `
-        // WebCC.Events.fire('${e.name}', { });`).join('')
+  // event listener stubs — positional args in manifest order
+  const eventListeners = evts.map(e => {
+    const paramList = (e.parameters || '').split(',').map(s => s.trim()).filter(Boolean)
+    const args = paramList.length > 0 ? ', ' + paramList.join(', ') : ''
+    return `
+        // WebCC.Events.fire('${e.name}'${args});`
+  }).join('')
 
   // contracts: properties
   const contractProps = props.map(p =>
