@@ -105,8 +105,8 @@ export default function Step4_Editor({ onNext, onBack }) {
           setEventLog(prev => [{
             id: crypto.randomUUID(), time: new Date().toLocaleTimeString(),
             name: e.data.name,
-            params: Array.isArray(e.data.params) && e.data.params.length > 0
-              ? e.data.params.map(a => JSON.stringify(a)).join(', ')
+            params: e.data.params && Object.keys(e.data.params).length > 0
+              ? JSON.stringify(e.data.params)
               : '',
             type: 'event'
           }, ...prev].slice(0, 50))
@@ -257,8 +257,18 @@ INTERFACE
 Properties:
 ${fmt(props, p => `  - ${p.name} (${p.type})${p.defaultValue ? ', default: ' + p.defaultValue : ''}`)}
 
-Events:
-${fmt(evts, e => `  - ${e.name}`)}
+Events (always fire with a single params object):
+${fmt(evts, e => {
+      const paramList  = (e.parameters || '').split(',').map(s => s.trim()).filter(Boolean)
+      const paramTypes = (e.paramTypes  || '').split(',').map(s => s.trim())
+      const fields = paramList.length > 0
+        ? '{ ' + paramList.map((p, i) => {
+            const t = ['string','number','boolean'].includes(paramTypes[i]) ? paramTypes[i] : 'string'
+            return `${p}: (${t})`
+          }).join(', ') + ' }'
+        : '{}'
+      return `  - WebCC.Events.fire('${e.name}', ${fields});`
+    })}
 
 Methods:
 ${fmt(meths, m => `  - ${m.name}`)}
@@ -270,7 +280,11 @@ RULES
   WebCC.start(callback, contracts, [], 10000)
   WebCC.Properties.Name  (read/write)
   WebCC.onPropertyChanged.subscribe(fn)  with fn({ key, value })
-  WebCC.Events.fire('EventName', { parameter })
+  WebCC.Events.fire('EventName', arg1, arg2, ...)
+- Events MUST always be fired with a single params object as the second argument.
+  ALWAYS: WebCC.Events.fire('Resize', { width: w, height: h })
+  NEVER use positional args: WebCC.Events.fire('Resize', w, h) is WRONG.
+  In TIA Portal the handler receives (item, params) and accesses params.width, params.height.
 - Libraries are already loaded — do not add extra <script> or <link> tags
 - webcc.min.js is always the first script loaded
 - No ES6 import/export — UMD/IIFE only
@@ -482,27 +496,36 @@ Based on the existing files above:
               </div>
             )}
 
-            {/* CodeMirror editor */}
-            <div className={`flex-1 min-h-0 overflow-hidden ${!editable ? 'opacity-60 pointer-events-none' : ''}`}>
-              <CodeMirror
-                value={value}
-                onChange={handleEditorChange}
-                extensions={[...currentLanguage(), editorTheme]}
-                theme={oneDark}
-                readOnly={!editable}
-                height="100%"
-                style={{ height: '100%' }}
-                basicSetup={{
-                  lineNumbers: true,
-                  foldGutter: true,
-                  autocompletion: true,
-                  bracketMatching: true,
-                  closeBrackets: true,
-                  indentOnInput: true,
-                  tabSize: 4,
-                }}
-              />
-            </div>
+            {/* CodeMirror editor — manifest.json uses textarea to avoid CM scroll bug */}
+            {activeTab === 'manifest.json'
+              ? <textarea
+                  value={value}
+                  onChange={onChange}
+                  spellCheck={false}
+                  className="flex-1 w-full bg-gray-950 text-gray-300 font-mono text-sm p-4
+                             focus:outline-none resize-none leading-relaxed overflow-auto"
+                  style={{ tabSize: 4 }}
+                />
+              : <div className="flex-1 min-h-0 overflow-hidden">
+                  <CodeMirror
+                    value={value}
+                    onChange={handleEditorChange}
+                    extensions={[...currentLanguage(), editorTheme]}
+                    theme={oneDark}
+                    height="100%"
+                    style={{ height: '100%' }}
+                    basicSetup={{
+                      lineNumbers: true,
+                      foldGutter: true,
+                      autocompletion: true,
+                      bracketMatching: true,
+                      closeBrackets: true,
+                      indentOnInput: true,
+                      tabSize: 4,
+                    }}
+                  />
+                </div>
+            }
           </div>
 
           {/* ── Tools row: Regenerate + AI Prompt ── */}

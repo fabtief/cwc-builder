@@ -2,14 +2,14 @@ import { createContext, useContext, useState } from 'react'
 
 const STORAGE_KEY = 'cwc-builder-project'
 
-const defaultProject = {
+export const defaultProject = {
   libraries: [],
   metadata: {
     name:        '',
     guid:        '',
     description: '',
-    iconData:    null,       // base64 data URL of uploaded icon
-    iconName:    'icon.png', // original filename (e.g. icon.ico)
+    iconData:    null,
+    iconName:    'icon.ico',
   },
   properties: [],
   events:     [],
@@ -19,7 +19,7 @@ const defaultProject = {
   themeCss:   '',
 }
 
-const loadFromStorage = () => {
+export const loadFromStorage = () => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     return saved ? { ...defaultProject, ...JSON.parse(saved) } : defaultProject
@@ -28,7 +28,7 @@ const loadFromStorage = () => {
   }
 }
 
-const saveToStorage = (project) => {
+export const saveToStorage = (project) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(project))
   } catch {
@@ -36,30 +36,11 @@ const saveToStorage = (project) => {
   }
 }
 
-const ProjectContext = createContext(null)
-
-export function ProjectProvider({ children }) {
-  const [project, setProject] = useState(loadFromStorage)
-
-  const updateProject = (partial) => {
-    setProject(prev => {
-      const updated = { ...prev, ...partial }
-      saveToStorage(updated)
-      return updated
-    })
-  }
-
-  const resetProject = () => {
-    localStorage.removeItem(STORAGE_KEY)
-    setProject(defaultProject)
-  }
-
-  return (
-    <ProjectContext.Provider value={{ project, updateProject, resetProject }}>
-      {children}
-    </ProjectContext.Provider>
-  )
+export const clearStorage = () => {
+  localStorage.removeItem(STORAGE_KEY)
 }
+
+export const ProjectContext = createContext(null)
 
 export function useProject() {
   return useContext(ProjectContext)

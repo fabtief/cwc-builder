@@ -1,4 +1,4 @@
-export function generateManifest(metadata, properties, events, methods) {
+export function generateManifest(metadata, properties, events, methods, iconFileName) {
   const guid = (metadata.guid || '').toUpperCase()
 
   const mapType = (type) => {
@@ -47,15 +47,17 @@ export function generateManifest(metadata, properties, events, methods) {
       }
     })
 
-  // Events as object { name: { arguments } } — Siemens uses "arguments" for events
+  // Events — always single "params" argument of type object
+  // WinCC Unified only reliably passes one argument; we always use a params object.
   const eventsObj = {}
   events
     .filter(e => e.name.trim())
     .forEach(e => {
-      const args = buildParams(e.parameters, e.paramTypes)
-      eventsObj[e.name.trim()] = Object.keys(args).length > 0
-        ? { arguments: args }
-        : {}
+      eventsObj[e.name.trim()] = {
+        arguments: {
+          params: { type: 'object' }
+        }
+      }
     })
 
   // Methods as object { name: { parameters } }
@@ -75,7 +77,7 @@ export function generateManifest(metadata, properties, events, methods) {
         name:        metadata.name || 'MyControl',
         version:     metadata.version || '1',
         displayname: metadata.displayname || metadata.name || 'MyControl',
-        icon:        './assets/icon.png',
+        icon:        `./assets/${iconFileName || 'icon.ico'}`,
         type:        `guid://${guid}`,
         start:       './control/index.html'
       },

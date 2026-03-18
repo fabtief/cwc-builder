@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { useProject } from '../../store/projectStore'
+import defaultIconUrl from '/cwc-builder.ico?url'
 
 const generateGuid = () =>
   'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -8,10 +9,6 @@ const generateGuid = () =>
     return v.toString(16)
   })
 
-// Default icon — tiny transparent PNG as fallback
-const DEFAULT_ICON_DATA = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABmJLR0QA/wD/AP+gvaeTAAAADUlEQVQ4jWNgYGD4DwABBAEAWamVswAAAABJRU5ErkJggg=='
-const DEFAULT_ICON_NAME = 'icon.png'
-
 export default function Step2_Metadata({ onNext, onBack }) {
   const { project, updateProject } = useProject()
   const [metadata, setMetadata] = useState(
@@ -19,7 +16,7 @@ export default function Step2_Metadata({ onNext, onBack }) {
       ? project.metadata
       : { ...project.metadata, guid: generateGuid() }
   )
-  const [errors, setErrors] = useState({})
+  const [errors, setErrors]     = useState({})
   const [iconDragOver, setIconDragOver] = useState(false)
   const iconInputRef = useRef(null)
 
@@ -28,14 +25,14 @@ export default function Step2_Metadata({ onNext, onBack }) {
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: null }))
   }
 
-  // ── Icon upload ───────────────────────────────────────────
+  // ── Icon upload — ICO only ────────────────────────────────
   const handleIconFile = (file) => {
     if (!file) return
-    const allowed = ['image/x-icon', 'image/vnd.microsoft.icon', 'image/png', 'image/jpeg', 'image/gif']
-    // .ico files sometimes report as application/octet-stream — allow by extension too
-    const isIco = file.name.endsWith('.ico')
-    if (!allowed.includes(file.type) && !isIco) {
-      alert('Please upload an .ico, .png, .jpg or .gif file.')
+    const isIco = file.name.toLowerCase().endsWith('.ico')
+               || file.type === 'image/x-icon'
+               || file.type === 'image/vnd.microsoft.icon'
+    if (!isIco) {
+      alert('Please upload an .ico file.')
       return
     }
     const reader = new FileReader()
@@ -48,7 +45,7 @@ export default function Step2_Metadata({ onNext, onBack }) {
 
   const clearIcon = () => {
     update('iconData', null)
-    update('iconName', DEFAULT_ICON_NAME)
+    update('iconName', 'icon.ico')
     if (iconInputRef.current) iconInputRef.current.value = ''
   }
 
@@ -69,7 +66,8 @@ export default function Step2_Metadata({ onNext, onBack }) {
     onNext()
   }
 
-  const iconSrc = metadata.iconData || DEFAULT_ICON_DATA
+  // Show uploaded icon or fall back to cwc-builder.ico from public/
+  const iconSrc = metadata.iconData || defaultIconUrl
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -87,17 +85,14 @@ export default function Step2_Metadata({ onNext, onBack }) {
           </label>
           <input
             type="text"
-            placeholder="e.g. DataTableControl"
-            value={metadata.name}
+            placeholder="e.g. MyGauge"
+            value={metadata.name || ''}
             onChange={e => update('name', e.target.value)}
             className={`w-full bg-gray-800 border rounded px-3 py-2 text-sm text-gray-100
                         placeholder-gray-500 focus:outline-none transition-colors
                         ${errors.name ? 'border-red-500' : 'border-gray-600 focus:border-blue-500'}`}
           />
           {errors.name && <p className="text-xs text-red-400 mt-1">{errors.name}</p>}
-          <p className="text-xs text-gray-600 mt-1">
-            Shown in TIA Portal under "My Controls".
-          </p>
         </div>
 
         {/* ── GUID ── */}
@@ -108,10 +103,11 @@ export default function Step2_Metadata({ onNext, onBack }) {
           <div className="flex gap-2">
             <input
               type="text"
-              value={metadata.guid}
+              placeholder="xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
+              value={metadata.guid || ''}
               onChange={e => update('guid', e.target.value.toLowerCase())}
-              className={`flex-1 bg-gray-800 border rounded px-3 py-2 text-sm font-mono text-gray-100
-                          placeholder-gray-500 focus:outline-none transition-colors
+              className={`flex-1 bg-gray-800 border rounded px-3 py-2 text-sm font-mono
+                          text-gray-100 placeholder-gray-500 focus:outline-none transition-colors
                           ${errors.guid ? 'border-red-500' : 'border-gray-600 focus:border-blue-500'}`}
             />
             <button
@@ -151,7 +147,9 @@ export default function Step2_Metadata({ onNext, onBack }) {
             Control Icon <span className="text-gray-600 text-xs font-normal">(optional)</span>
           </label>
           <p className="text-xs text-gray-600 mb-2">
-            Shown next to the control name in TIA Portal "My Controls". Recommended: 16×16 or 32×32 px .ico file.
+            Shown next to the control name in TIA Portal "My Controls".
+            Only <code className="text-blue-400">.ico</code> format accepted.
+            Recommended: 16×16 or 32×32 px.
           </p>
 
           <div className="flex items-start gap-4">
@@ -193,7 +191,7 @@ export default function Step2_Metadata({ onNext, onBack }) {
               >
                 {metadata.iconData
                   ? `✓ ${metadata.iconName} — click to replace`
-                  : '⬆ Upload icon (.ico, .png, .jpg)'}
+                  : '⬆ Upload icon (.ico)'}
               </button>
 
               {metadata.iconData && (
@@ -201,19 +199,19 @@ export default function Step2_Metadata({ onNext, onBack }) {
                   onClick={clearIcon}
                   className="text-xs text-gray-600 hover:text-red-400 transition-colors text-left"
                 >
-                  ✕ Remove — use default icon
+                  ✕ Remove — use default icon (cwc-builder.ico)
                 </button>
               )}
 
               <p className="text-xs text-gray-600">
-                Or drop a file onto the preview box.
+                Or drop a .ico file onto the preview box.
               </p>
             </div>
 
             <input
               ref={iconInputRef}
               type="file"
-              accept=".ico,.png,.jpg,.jpeg,.gif"
+              accept=".ico"
               className="hidden"
               onChange={e => handleIconFile(e.target.files[0])}
             />
